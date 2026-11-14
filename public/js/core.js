@@ -7,8 +7,15 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------- API ------------------------------------------------------------------
+export const auth = {
+  get token() { try { return localStorage.getItem('cp-token'); } catch { return null; } },
+  set token(v) { try { if (v) localStorage.setItem('cp-token', v); else localStorage.removeItem('cp-token'); } catch { /* private mode */ } },
+  user: null
+};
 export async function api(path, options = {}) {
-  const opts = { headers: { 'Content-Type': 'application/json' }, ...options };
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
+  const opts = { headers, ...options };
   if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
   let res;
   try {
@@ -17,6 +24,7 @@ export async function api(path, options = {}) {
     throw new Error('Could not reach the API. Is the server running?');
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && !path.includes('/auth/login')) window.dispatchEvent(new CustomEvent('cp-signed-out'));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.status = res.status; err.hint = data.hint; err.data = data;

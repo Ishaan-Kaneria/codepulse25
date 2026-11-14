@@ -68,12 +68,18 @@ const Q = {
           JOIN problems p ON p.problem_id = s.problem_id
           ORDER BY s.submission_timestamp DESC LIMIT 8`
   },
-  'overview.pulse': {
+  'overview.monthly': {
     srs: 'SRS 3',
-    sql: `SELECT s.submission_id AS id, s.verdict::text AS v,
-                 s.submission_timestamp::date::text AS d
-          FROM submissions s
-          ORDER BY s.submission_timestamp, s.submission_id`
+    sql: `SELECT to_char(date_trunc('month', submission_timestamp), 'YYYY-MM') AS month,
+                 COUNT(*)::int AS total,
+                 COUNT(*) FILTER (WHERE verdict = 'AC')::int  AS ac,
+                 COUNT(*) FILTER (WHERE verdict = 'WA')::int  AS wa,
+                 COUNT(*) FILTER (WHERE verdict = 'TLE')::int AS tle,
+                 COUNT(*) FILTER (WHERE verdict = 'MLE')::int AS mle,
+                 COUNT(*) FILTER (WHERE verdict = 'RE')::int  AS re,
+                 COUNT(*) FILTER (WHERE verdict = 'CE')::int  AS ce
+          FROM submissions
+          GROUP BY 1 ORDER BY 1`
   },
   'overview.tables': {
     srs: 'Schema',

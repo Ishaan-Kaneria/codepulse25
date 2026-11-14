@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://codepulse-team25.netlify.app"><img src="docs/banner.svg" alt="CodePulse: every submission in the database, drawn as a waveform coloured by verdict" width="100%"></a>
+  <a href="https://codepulse-team25.netlify.app"><img src="docs/banner.svg" alt="CodePulse: every submission judged and stored in PostgreSQL, with a chart of submissions per month" width="100%"></a>
 </p>
 
 <p align="center">
@@ -30,16 +30,17 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-1440.png">
-  <img alt="Overview screen: a waveform of every submission coloured by verdict, headline stats, the latest submissions and the verdict mix" src="docs/screenshots/overview-light-1440.png">
+  <img alt="Overview screen: submissions per month, headline stats, the latest submissions and the verdict mix" src="docs/screenshots/overview-light-1440.png">
 </picture>
 
 ## Highlights
 
-- **The verdict waveform.** The Overview draws every submission in arrival order. Accepted code rises above the line, failures drop below it, and each failure type has its own colour and depth. Point at a tick to see it; click to open its judge log. Click a verdict in the legend to hide it.
+- **A live overview.** Submissions and accepted submissions per month as a smooth chart (point at a month for its numbers), six headline stats, the latest verdicts and the verdict mix, all read from PostgreSQL when the page opens.
+- **Sign-in against the `users` table.** Accounts are the real rows in `users`. Signing in updates `last_login_timestamp` and `session_count`, and only a signed-in user can create, edit or delete problems.
 - **Real CRUD, real constraints.** Create, edit and delete problems with their topic and company tags in one transaction. Deleting a problem that still has submissions, contest entries or posts is refused by a foreign key, and the app explains which one.
 - **Nothing is hidden.** A *View SQL* button sits on every screen. The SQL lives on the server; the browser only sends a query name and typed values, which reach PostgreSQL as `$1, $2 …` placeholders.
 - **Jump anywhere.** Press <kbd>Ctrl</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) to open the command palette, then type a screen name, a problem title or a problem id.
-- **Light and dark, phone and desktop.** It follows your system theme and works at 390 px wide.
+- **Light and dark, phone and desktop.** It follows your system theme, has a toggle, and works at 390 px wide.
 
 ## Screens
 
@@ -49,6 +50,7 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 | <img src="docs/screenshots/submissions-dark-1440-row.png" alt="A submission with its failure log and source code"><br>**Submissions & judge** — the code blob by SHA-256 and its one failure log | <img src="docs/screenshots/premium-dark-1440.png" alt="Premium screen with revenue chart and access checker"><br>**Premium & access** — revenue, renewals and a live access checker |
 | <img src="docs/screenshots/solvers-light-1440.png" alt="Solver profile with rating graph and topic accuracy"><br>**Solver progress** — streaks, solved rings, rating graph with `LAG()` | <img src="docs/screenshots/querylab-light-1440.png" alt="Query lab running a Lab 10A query"><br>**Query lab** — run any of the 30 Lab 10A queries |
 | <img src="docs/screenshots/contests-light-1440.png" alt="Contest leaderboard"><br>**Contests** — leaderboards read from pre-calculated ranks | <img src="docs/screenshots/integrity-dark-1440.png" alt="Code integrity screen"><br>**Code integrity** — dedup savings and identical contest code |
+| <img src="docs/screenshots/login-light-1440.png" alt="Sign-in screen"><br>**Sign in** — any account from `users`, demo password `codepulse` | |
 
 <p align="center">
   <img src="docs/screenshots/overview-light-390.png" alt="Overview on a phone" width="260">
@@ -61,7 +63,7 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 
 | Screen | SRS V6 | What you can do |
 |---|---|---|
-| Overview | all | The verdict waveform, live totals, verdict mix, difficulty split, languages, latest submissions, a map of all 12 functions |
+| Overview | all | Submissions per month, live totals, verdict mix, difficulty split, languages, latest submissions, a map of all 12 functions |
 | Problem Library | 1, 2, 7 | **Create, read, update and delete problems**, with topic tags, company tags, test cases and per-problem judging stats |
 | Submissions & Judge | 3, 11, 12 | Filter by verdict, language, user or contest; open a submission to see its code blob and its failure log |
 | Contests & Leaderboard | 4 | Every contest, its pre-calculated leaderboard, its problem set, and the global rating ladder |
@@ -76,6 +78,13 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 | Connection & Schema | Lab 11 | `SELECT version()`, the request path, and a row count for all 42 tables |
 
 </details>
+
+## Signing in
+
+Every row in `users` is an account. The stored `password_hash` values are sample bcrypt hashes whose passwords are unknown,
+so for the demo all accounts share one password, checked on the server: **`codepulse`** (set `DEMO_PASSWORD` to change it).
+Try `parth_modi`, an administrator. The server returns an HMAC-signed token (`AUTH_SECRET`), and the API refuses
+`POST`, `PUT` and `DELETE` on `/api/problems` without it.
 
 ## How it fits together
 
@@ -149,9 +158,11 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | `SELECT version()`, database name, table count |
+| POST | `/api/auth/login` | Sign in with a username or email from `users`; returns a token |
+| GET | `/api/auth/me` | The signed-in user and their roles |
 | GET | `/api/problems?q=&difficulty=&topic_id=&company_id=&sort=&page=&size=` | **Read** a page of problems |
 | GET | `/api/problems/:id` | **Read** one problem with topics, companies, test cases, verdicts |
-| POST | `/api/problems` | **Create** a problem and its tags in one transaction |
+| POST | `/api/problems` | **Create** a problem and its tags in one transaction (signed in) |
 | PUT | `/api/problems/:id` | **Update** a problem (`WHERE problem_id = $11`) |
 | DELETE | `/api/problems/:id` | **Delete** a problem (`WHERE problem_id = $1`); 409 with the reason if a foreign key blocks it |
 | GET | `/api/problems/meta` | Setters, rules, topics and companies for the form |
@@ -176,6 +187,7 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 │   ├── app.js                Express routes, health check, error handling
 │   ├── index.js              starts the server locally or in a Codespace
 │   ├── routes/problems.js    INSERT, SELECT, UPDATE, DELETE on problems     Lab 11 B
+│   ├── routes/auth.js        demo sign-in against the users table
 │   └── queries/
 │       ├── srs.js            read-only queries behind every screen
 │       └── lab10a.js         the 30 Lab 10A queries

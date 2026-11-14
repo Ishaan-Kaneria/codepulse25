@@ -2,7 +2,7 @@
 import {
   $, $$, esc, api, q, fmtDate, fmtNum, pct, diff, verdict, level, status, initials, table, bindRows, autoTable,
   bars, donut, columns, lineChart, highlightSQL, openDrawer, closeDrawer, openModal, closeModal, toast, errorBox,
-  showSQL, icon, VERDICT_COLORS, VERDICT_NAMES
+  showSQL, icon, VERDICT_COLORS, VERDICT_NAMES, auth
 } from './core.js';
 
 // ---------------------------------------------------------------- navigation
@@ -79,36 +79,52 @@ async function fill(el, fn) {
 const VORDER = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+const TILE_ICONS = {
+  users: '<path d="M16 19a4 4 0 0 0-8 0M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM20 19a3 3 0 0 0-3-3M17 5a3 3 0 0 1 0 6"/>',
+  problems: '<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6M9 18h3"/>',
+  subs: '<path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12"/>',
+  ac: '<path d="M5 12l5 5L20 7"/>',
+  contests: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8"/>',
+  premium: '<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/>'
+};
+
 async function pageOverview(v) {
+  const first = (auth.user?.username || '').split('_')[0];
   v.innerHTML = `
-    <section class="pulse" aria-labelledby="pulse-title">
-      <div class="pulse-top">
-        <div>
-          <h1 id="pulse-title"><span class="count" id="pulse-count">Every</span> verdicts, each one a row in PostgreSQL.</h1>
-          <p>CodePulse is a LeetCode-style practice platform built on a 42-table BCNF schema. The strip below is every submission
-            the judge has scored, in the order it arrived. Point at a tick to see it, click to open its judge log.</p>
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        ${first ? `<div class="hero-hi"><span class="dot">${initials(auth.user.username)}</span>Welcome back, ${esc(first[0].toUpperCase() + first.slice(1))}</div>` : ''}
+        <h1 id="hero-title">Every submission, judged and stored in PostgreSQL.</h1>
+        <p>A LeetCode-style practice platform on a 42-table BCNF schema. Browse problems, open any verdict's judge log, or run the Lab 10A queries live.</p>
+        <div class="hero-cta">
+          <a class="btn light" href="#/problems">${icon.arrow} Browse problems</a>
+          <a class="btn glass" href="#/querylab">${icon.play} Open Query Lab</a>
         </div>
-        <div class="pulse-stats" id="hero-stats">${'<div><b>&nbsp;</b><span>&nbsp;</span></div>'.repeat(6)}</div>
       </div>
-      <div class="tape-wrap">
-        <svg class="tape" id="tape" role="img" aria-label="Every submission in time order, coloured by verdict" preserveAspectRatio="none"></svg>
-        <div class="tape-axis" id="tape-axis"></div>
-        <div class="tape-legend" id="tape-legend"></div>
+      <div class="chart-glass">
+        <div class="ch-head"><b>Submissions per month</b><span id="ch-sub"></span>
+          <div class="ch-legend"><span><i style="background:#B6A8FF"></i>All</span><span><i style="background:#4FE3B4"></i>Accepted</span></div></div>
+        <svg class="area" id="area" role="img" aria-label="Submissions and accepted submissions per month"></svg>
       </div>
     </section>
-    <div class="grid g-2-1 mb"><div id="ov-recent"></div><div id="ov-verdicts"></div></div>
-    <div class="grid g3 mb"><div id="ov-diff"></div><div id="ov-lang"></div><div id="ov-topics"></div></div>
+    <div class="tiles" id="tiles">${'<div class="tile"><div class="ic"></div><b>&nbsp;</b><span>&nbsp;</span></div>'.repeat(6)}</div>
+    <div class="grid g-2-1 mb eq"><div id="ov-recent"></div><div id="ov-verdicts"></div></div>
+    <div class="grid g3 mb eq"><div id="ov-diff"></div><div id="ov-lang"></div><div id="ov-topics"></div></div>
     ${card('Twelve product functions, one screen each', `<div class="srs-grid">${SRS.map((s) => `<a class="srs-card" href="#/${s.page}"><span class="no">${s.n}</span><b>${esc(s.t)}</b><span>${esc(s.d)}</span></a>`).join('')}</div>`,
       { flush: true, sub: 'from the SRS, version 6' })}`;
 
-  fill('#hero-stats', async (el) => {
-    const s = (await q('overview.stats')).rows[0];
-    el.innerHTML = [
-      [fmtNum(s.users), 'registered users'], [fmtNum(s.problems), 'problems'], [pct(s.acceptance_pct), 'accepted'],
-      [fmtNum(s.contests), 'contests'], [fmtNum(s.posts), 'discussion posts'], [fmtNum(s.active_premium), 'active Premium plans']
-    ].map(([b, t]) => `<div><b>${b}</b><span>${t}</span></div>`).join('');
-  });
-  drawTape();
+  q('overview.stats').then(({ rows: [s] }) => {
+    const t = [
+      ['users', fmtNum(s.users), 'registered users', 'var(--accent)', 'var(--accent-soft)'],
+      ['problems', fmtNum(s.problems), 'problems', 'var(--violet)', 'var(--violet-soft)'],
+      ['subs', fmtNum(s.submissions), 'submissions judged', 'var(--pink)', 'var(--re-soft)'],
+      ['ac', pct(s.acceptance_pct), 'acceptance rate', 'var(--easy)', 'var(--ac-soft)'],
+      ['contests', fmtNum(s.contests), 'contests held', 'var(--warn)', 'var(--tle-soft)'],
+      ['premium', fmtNum(s.active_premium), 'active Premium plans', 'var(--accent-2)', 'var(--accent-2-soft)']
+    ];
+    $('#tiles').innerHTML = t.map(([k, b, l, c, soft]) => `<div class="tile" style="--t:${c};--t-soft:${soft}"><div class="ic"><svg viewBox="0 0 24 24">${TILE_ICONS[k]}</svg></div><b>${b}</b><span>${l}</span></div>`).join('');
+  }).catch((e) => { if ($('#tiles')) $('#tiles').outerHTML = errorBox(e); });
+  drawMonthly();
   fill('#ov-verdicts', async (el) => {
     const rows = (await q('overview.verdicts')).rows.sort((a, b) => VORDER.indexOf(a.verdict) - VORDER.indexOf(b.verdict));
     const total = rows.reduce((s, r) => s + r.total, 0);
@@ -121,13 +137,13 @@ async function pageOverview(v) {
     const color = { Easy: 'var(--easy)', Medium: 'var(--medium)', Hard: 'var(--hard)' };
     el.innerHTML = card('Problems by difficulty',
       `${bars(rows.map((r) => ({ label: r.difficulty, value: r.problems, color: color[r.difficulty] })), { labelW: 72 })}
-       <div class="small muted" style="margin-top:14px">Average acceptance is ${rows.map((r) => `${pct(r.avg_acceptance)} for ${esc(r.difficulty.toLowerCase())}`).join(', ')}.</div>`,
+       <div class="small muted" style="margin-top:16px">Average acceptance is ${rows.map((r) => `${pct(r.avg_acceptance)} for ${esc(r.difficulty.toLowerCase())}`).join(', ')}.</div>`,
       { sub: 'SRS 1', tools: `<button class="btn sm" data-sql='["overview.difficulty"]' aria-label="View SQL">${icon.sql}</button>` });
   });
   fill('#ov-lang', async (el) => {
     const rows = (await q('overview.languages')).rows;
-    el.innerHTML = card('Languages', `${columns(rows.map((r) => ({ label: r.language, value: r.submissions })), { alt: true })}
-      <div class="small muted" style="margin-top:6px">${rows.map((r) => `${esc(r.language)} ${pct(r.ac_pct)}`).join(', ')} accepted.</div>`,
+    el.innerHTML = card('Languages', `${columns(rows.map((r) => ({ label: r.language, value: r.submissions })))}
+      <div class="small muted" style="margin-top:8px">${rows.map((r) => `${esc(r.language)} ${pct(r.ac_pct)}`).join(', ')} accepted.</div>`,
       { sub: 'submissions', tools: `<button class="btn sm" data-sql='["overview.languages"]' aria-label="View SQL">${icon.sql}</button>` });
   });
   fill('#ov-recent', async (el) => {
@@ -143,73 +159,65 @@ async function pageOverview(v) {
   });
   fill('#ov-topics', async (el) => {
     const rows = (await q('overview.topics')).rows;
-    el.innerHTML = card('Most-tagged topics', bars(rows.slice(0, 8).map((r) => ({ label: r.topic_name, value: r.problems })), { color: 'var(--violet)', labelW: 128 }),
+    el.innerHTML = card('Most-tagged topics', bars(rows.slice(0, 7).map((r) => ({ label: r.topic_name, value: r.problems })), { color: 'var(--violet)', labelW: 128 }),
       { sub: 'problem_topics' });
   });
 }
 
-async function drawTape() {
-  const svg = $('#tape'); if (!svg) return;
+// Smooth area chart: all submissions per month, with the accepted ones as a second line.
+async function drawMonthly() {
+  const svg = $('#area'); if (!svg) return;
   let rows;
-  try { rows = (await q('overview.pulse')).rows; } catch (e) { svg.outerHTML = errorBox(e); return; }
-  if (!$('#tape')) return;
-  const n = rows.length;
-  $('#pulse-count').textContent = fmtNum(n);
-  const W = 1000, H = 120, mid = H / 2, w = W / n;
-  const hidden = new Set();
-  const counts = Object.fromEntries(VORDER.map((k) => [k, 0]));
-  rows.forEach((r) => { counts[r.v] += 1; });
-  // a waveform: accepted code rises above the line, every failure drops below it
-  const amp = { AC: 0.94, WA: 0.92, RE: 0.8, TLE: 0.7, MLE: 0.6, CE: 0.46 };
-  const paint = () => {
-    svg.innerHTML = `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="mid-line" vector-effect="non-scaling-stroke"/>
-      <g class="ticks">${rows.map((r, i) => {
-        if (hidden.has(r.v)) return '';
-        const h = (mid - 1) * amp[r.v];
-        const y = r.v === 'AC' ? mid - 1 - h : mid + 1;
-        return `<rect x="${(i * w).toFixed(3)}" y="${y.toFixed(1)}" width="${(w * 1.02).toFixed(3)}" height="${h.toFixed(1)}" style="fill:${VERDICT_COLORS[r.v]}"/>`;
-      }).join('')}</g>
-      <line class="hover-line" x1="0" x2="0" y1="0" y2="${H}" vector-effect="non-scaling-stroke"/>`;
-  };
+  try { rows = (await q('overview.monthly')).rows; } catch (e) { svg.outerHTML = errorBox(e); return; }
+  if (!$('#area')) return;
+  const W = Math.max(300, Math.round(svg.clientWidth || 640)), H = Math.round(svg.clientHeight || 210), P = { l: 30, r: 8, t: 10, b: 24 };
+  const n = rows.length, max = Math.max(...rows.map((r) => r.total)) * 1.12;
+  const x = (i) => P.l + (i * (W - P.l - P.r)) / (n - 1);
+  const y = (v) => P.t + (1 - v / max) * (H - P.t - P.b);
+  // Catmull-Rom to cubic Bezier for a smooth, honest curve through every point
+  const curve = (pts) => pts.map((p, i) => {
+    if (!i) return `M${p[0]},${p[1]}`;
+    const p0 = pts[i - 2] || pts[i - 1], p1 = pts[i - 1], p3 = pts[i + 1] || p;
+    const c1 = [p1[0] + (p[0] - p0[0]) / 6, p1[1] + (p[1] - p0[1]) / 6];
+    const c2 = [p[0] - (p3[0] - p1[0]) / 6, p[1] - (p3[1] - p1[1]) / 6];
+    return `C${c1[0].toFixed(1)},${Math.min(H - P.b, c1[1]).toFixed(1)} ${c2[0].toFixed(1)},${Math.min(H - P.b, c2[1]).toFixed(1)} ${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+  }).join(' ');
+  const tot = rows.map((r, i) => [x(i), y(r.total)]);
+  const acc = rows.map((r, i) => [x(i), y(r.ac)]);
+  const base = H - P.b;
+  const ticks = [0, 0.5, 1].map((t) => Math.round((max / 1.12) * t));
+  const step = Math.max(1, Math.ceil(n / Math.max(3, Math.floor(W / 90))));
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  paint();
-  svg.classList.add('draw');
+  svg.innerHTML = `<defs>
+      <linearGradient id="g-tot" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#9D8BFF" stop-opacity=".55"/><stop offset="1" stop-color="#9D8BFF" stop-opacity="0"/></linearGradient>
+      <linearGradient id="g-ac" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#34D399" stop-opacity=".35"/><stop offset="1" stop-color="#34D399" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map((t) => `<line class="gl" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${P.l - 8}" y="${y(t) + 4}" text-anchor="end">${t}</text>`).join('')}
+    <path class="fill" d="${curve(tot)} L${x(n - 1)},${base} L${x(0)},${base} Z" fill="url(#g-tot)" stroke="none"/>
+    <path class="fill" d="${curve(acc)} L${x(n - 1)},${base} L${x(0)},${base} Z" fill="url(#g-ac)" stroke="none"/>
+    <path class="total-line" d="${curve(tot)}"/><path class="ac-line" d="${curve(acc)}"/>
+    ${rows.map((r, i) => ((i % step === 0 && n - 1 - i >= step * 0.75) || i === n - 1 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="${i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}">${MONTHS[Number(r.month.slice(5)) - 1]} ${r.month.slice(2, 4)}</text>` : '')).join('')}
+    <line class="guide" y1="${P.t}" y2="${base}"/><circle class="dot-t" r="4.5"/><circle class="dot-a" r="4.5"/>`;
+  const total = rows.reduce((a, r) => a + r.total, 0);
+  $('#ch-sub').textContent = `${fmtNum(total)} in ${n} months`;
 
-  // axis: first date, month starts, last date
-  const firstOf = {};
-  rows.forEach((r, i) => { const m = r.d.slice(0, 7); if (!(m in firstOf)) firstOf[m] = i; });
-  const months = Object.entries(firstOf);
-  const step = Math.max(1, Math.ceil(months.length / (svg.clientWidth < 600 ? 3 : 6)));
-  $('#tape-axis').innerHTML = months.filter((_, k) => k % step === 0)
-    .map(([m]) => `<span>${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}</span>`).join('') + `<span>${fmtDate(rows[n - 1].d)}</span>`;
-
-  $('#tape-legend').innerHTML = VORDER.map((k) => `<button aria-pressed="true" data-v="${k}" title="Show or hide ${esc(VERDICT_NAMES[k])}">
-      <i style="background:${VERDICT_COLORS[k]}"></i>${esc(VERDICT_NAMES[k])} <b>${fmtNum(counts[k])}</b></button>`).join('') +
-    '<span class="tape-hint">Click a verdict to hide it</span>';
-  $$('#tape-legend button').forEach((b) => b.addEventListener('click', () => {
-    const k = b.dataset.v;
-    if (hidden.has(k)) hidden.delete(k); else hidden.add(k);
-    b.setAttribute('aria-pressed', String(!hidden.has(k)));
-    svg.classList.remove('draw');
-    paint();
-  }));
-
-  const tip = $('#tip');
-  const at = (e) => {
-    const box = svg.getBoundingClientRect();
-    return Math.min(n - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * n)));
-  };
+  const tip = $('#tip'), guide = $('.guide', svg), dt = $('.dot-t', svg), da = $('.dot-a', svg);
+  const show = (on) => { [guide, dt, da].forEach((el) => { el.style.opacity = on ? '1' : '0'; }); tip.classList.toggle('on', on); };
   svg.addEventListener('mousemove', (e) => {
-    const i = at(e); const r = rows[i];
-    const line = $('.hover-line', svg);
-    line.setAttribute('x1', i * w + w / 2); line.setAttribute('x2', i * w + w / 2); line.style.opacity = '.9';
-    tip.innerHTML = `${verdict(r.v)} <b>Submission #${r.id}</b><br><span class="muted">${esc(VERDICT_NAMES[r.v])}, ${fmtDate(r.d)}</span>`;
-    tip.classList.add('on');
-    const tx = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 10);
-    tip.style.left = `${tx}px`; tip.style.top = `${e.clientY + 16}px`;
+    const box = svg.getBoundingClientRect();
+    const vx = ((e.clientX - box.left) / box.width) * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((vx - P.l) / (W - P.l - P.r)) * (n - 1))));
+    const r = rows[i];
+    guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i));
+    dt.setAttribute('cx', x(i)); dt.setAttribute('cy', y(r.total)); da.setAttribute('cx', x(i)); da.setAttribute('cy', y(r.ac));
+    tip.innerHTML = `<b>${MONTHS[Number(r.month.slice(5)) - 1]} ${r.month.slice(0, 4)}</b>
+      <div class="tr"><span><i style="background:#9D8BFF"></i>Submissions</span><b>${r.total}</b></div>
+      <div class="tr"><span><i style="background:#34D399"></i>Accepted</span><b>${r.ac}</b></div>
+      <div class="tr"><span class="muted">Acceptance</span><b>${pct((100 * r.ac) / r.total)}</b></div>`;
+    show(true);
+    tip.style.left = `${Math.min(e.clientX + 16, innerWidth - tip.offsetWidth - 12)}px`;
+    tip.style.top = `${e.clientY + 16}px`;
   });
-  svg.addEventListener('mouseleave', () => { tip.classList.remove('on'); const l = $('.hover-line', svg); if (l) l.style.opacity = '0'; });
-  svg.addEventListener('click', (e) => { tip.classList.remove('on'); openSubmission(rows[at(e)].id); });
+  svg.addEventListener('mouseleave', () => show(false));
 }
 
 // ---------------------------------------------------------------- Problems (CRUD)
@@ -361,7 +369,7 @@ function confirmDelete(p) {
     <div class="note-box">Its topic tags, company tags and test cases go with it (ON DELETE CASCADE). If submissions, contests, editorials, posts or study plans
       still point at it, PostgreSQL will refuse, and you will see why.</div>
     <div id="del-msg" style="margin-top:12px"></div>
-    <div class="form-actions"><button class="btn" data-close>Keep it</button><button class="btn danger" id="del-go">${icon.trash} Delete</button></div>`);
+    <div class="form-actions"><button class="btn" data-close>Keep it</button><button class="btn danger solid" id="del-go">${icon.trash} Delete problem</button></div>`);
   $('#del-go', body).onclick = async () => {
     try {
       const res = await api(`/api/problems/${p.problem_id}`, { method: 'DELETE' });
@@ -593,8 +601,8 @@ async function pagePremium(v) {
     title: 'Premium & Access', srs: ['SRS 6'],
     desc: 'Subscriptions, their payment history, and the gating rules that decide who can open which feature. Try the access checker.',
     sql: ['premium.summary', 'premium.expiring', 'premium.revenue', 'premium.rules', 'premium.access_check']
-  }) + `<div class="grid g3 mb"><div id="pr-sum"></div><div id="pr-rev" class="span-2"></div></div>
-    <div class="grid g2 mb"><div id="pr-check"></div><div id="pr-exp"></div></div>
+  }) + `<div class="grid g3 mb eq"><div id="pr-sum"></div><div id="pr-rev" class="span-2"></div></div>
+    <div class="grid g2 mb eq"><div id="pr-check"></div><div id="pr-exp"></div></div>
     <div class="grid g2"><div id="pr-rules"></div><div id="pr-pay"></div></div>`;
   fill('#pr-sum', async (el) => {
     const rows = (await q('premium.summary')).rows;
@@ -1018,11 +1026,11 @@ $('#menu-btn').addEventListener('click', () => { $('#sidebar').classList.add('on
 const savedTheme = (() => { try { return localStorage.getItem('cp-theme'); } catch { return null; } })();
 const theme = savedTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 document.documentElement.dataset.theme = theme;
-$('#theme-btn').addEventListener('click', () => {
+$$('[data-theme-toggle]').forEach((b) => b.addEventListener('click', () => {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('cp-theme', next); } catch { /* private mode */ }
-});
+}));
 
 // connection badge
 api('/api/health').then((h) => {
@@ -1093,5 +1101,59 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') closePalette();
 });
 
-window.addEventListener('hashchange', route);
-route();
+// ---------------------------------------------------------------- sign-in
+const ROLE_ORDER = ['Administrator', 'Problem setter', 'Contest manager', 'Moderation lead', 'Solver'];
+function renderMe() {
+  const u = auth.user; const el = $('#me');
+  if (!u) { el.hidden = true; return; }
+  const role = (u.roles || []).sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b))[0] || 'Member';
+  el.hidden = false;
+  el.innerHTML = `<div class="av">${initials(u.username)}</div><div><b>${esc(u.username)}</b><span>${esc(role)}</span></div>
+    <button id="sign-out" title="Sign out" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg></button>`;
+  $('#sign-out').onclick = signOut;
+}
+let started = false;
+function enterApp(user) {
+  auth.user = user;
+  $('#login').hidden = true;
+  renderMe();
+  if (!started) { started = true; window.addEventListener('hashchange', route); }
+  route();
+}
+function showLogin(message = '') {
+  closeDrawer(); closeModal(); closePalette();
+  $('#login').hidden = false;
+  $('#login-err').textContent = message;
+  setTimeout(() => $('#login-user').focus(), 30);
+}
+function signOut() {
+  auth.token = null; auth.user = null; renderMe();
+  $('#login-pass').value = '';
+  showLogin();
+}
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#login-go'); btn.disabled = true; btn.textContent = 'Signing in…';
+  $('#login-err').textContent = '';
+  try {
+    const res = await api('/api/auth/login', { method: 'POST', body: { username: $('#login-user').value, password: $('#login-pass').value } });
+    auth.token = res.token;
+    enterApp(res.user);
+    toast(`<b>Signed in as ${esc(res.user.username)}.</b><br><span class="small">last_login_timestamp updated in users.</span>`, 'ok');
+  } catch (err) {
+    $('#login-err').textContent = err.message;
+  } finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+});
+$('#demo-fill').addEventListener('click', () => { $('#login-user').value = 'parth_modi'; $('#login-pass').value = 'codepulse'; $('#login-go').focus(); });
+$('#pw-toggle').addEventListener('click', () => {
+  const p = $('#login-pass'); const show = p.type === 'password';
+  p.type = show ? 'text' : 'password'; $('#pw-toggle').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+});
+window.addEventListener('cp-signed-out', () => { if (auth.user) { auth.token = null; auth.user = null; renderMe(); showLogin('Your session ended. Sign in again to continue.'); } });
+
+(async () => {
+  if (auth.token) {
+    try { const { user } = await api('/api/auth/me'); enterApp(user); return; } catch { auth.token = null; }
+  }
+  showLogin();
+})();

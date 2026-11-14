@@ -5,6 +5,7 @@ const { run, pool } = require('./db');
 const { Q, AS_OF } = require('./queries/srs');
 const LAB10A = require('./queries/lab10a');
 const problems = require('./routes/problems');
+const auth = require('./routes/auth');
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
@@ -23,8 +24,11 @@ api.get('/health', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Main table CRUD
-api.use('/problems', problems);
+// Sign-in (demo)
+api.use('/auth', auth);
+
+// Main table CRUD (writes need a signed-in user)
+api.use('/problems', (req, res, next) => (req.method === 'GET' ? next() : auth.requireUser(req, res, next)), problems);
 
 // Named read-only queries for every SRS screen: GET /api/q/<key>?param=value
 function readParams(def, query) {
