@@ -1,7 +1,33 @@
 {
-  "name": "codepulse-leetcode-dbms",
-  "version": "1.0.0",
-  "description": "Team 25 | MC212 DBMS Lab 11 | GUI and database connectivity for the LeetCode-style Practice Management System (Node.js + Express + pg).",
+  "name": "codepulse",
+  "version": "1.2.0",
+  "description": "CodePulse: a LeetCode-style practice platform on PostgreSQL. 42-table BCNF schema, Node.js + Express + pg API, sign-in against the users table, live on Netlify. Team 25, MC212 DBMS.",
+  "keywords": [
+    "postgresql",
+    "nodejs",
+    "express",
+    "node-postgres",
+    "netlify",
+    "dbms",
+    "sql",
+    "database-design",
+    "bcnf",
+    "crud",
+    "leetcode"
+  ],
+  "homepage": "https://codepulse25.netlify.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ishaan-Kaneria/codepulse-lab11.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ishaan-Kaneria/codepulse-lab11/issues"
+  },
+  "license": "MIT",
+  "author": "Ishaan Kaneria (202503004)",
+  "contributors": [
+    "Mann Chauhan (202503045)"
+  ],
   "main": "server/index.js",
   "type": "commonjs",
   "scripts": {
@@ -15,6 +41,7 @@
   },
   "dependencies": {
     "@netlify/database": "^2.0.1",
+    "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "pg": "^8.13.1",

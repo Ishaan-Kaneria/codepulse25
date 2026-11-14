@@ -229,7 +229,8 @@ async function pageProblems(v) {
   v.innerHTML = head({
     title: 'Problem Library', srs: ['SRS 1', 'SRS 2', 'SRS 7', 'CRUD · problems'],
     desc: 'Our main table for Lab 11. Search, filter, open a problem, then <b>add</b>, <b>edit</b> or <b>delete</b> it. Every change is written straight to PostgreSQL.',
-    actions: `<button class="btn accent" id="new-problem">${icon.plus} New problem</button>`
+    actions: canEdit() ? `<button class="btn accent" id="new-problem">${icon.plus} New problem</button>`
+      : `<span class="chip ghost" title="Only administrators and problem setters can change problems">${icon.lock} Read-only for ${esc(roleOf(auth.user))} accounts</span>`
   }) + `<section class="card fade-in">
       <div class="filters">
         <div class="search">${icon.search}<input class="input" id="p-q" placeholder="Search title or id…" value="${esc(pstate.q)}"></div>
@@ -256,7 +257,7 @@ async function pageProblems(v) {
   $('#p-topic').addEventListener('change', (e) => { pstate.topic_id = e.target.value; pstate.page = 1; loadProblems(); });
   $('#p-company').addEventListener('change', (e) => { pstate.company_id = e.target.value; pstate.page = 1; loadProblems(); });
   $('#p-sort').addEventListener('change', (e) => { pstate.sort = e.target.value; loadProblems(); });
-  $('#new-problem').addEventListener('click', () => problemForm());
+  $('#new-problem')?.addEventListener('click', () => problemForm());
   loadProblems();
 }
 
@@ -294,10 +295,10 @@ async function openProblem(id) {
     body.innerHTML = `
       <div class="pill-row">${diff(p.difficulty_level)} ${level(p.access)} <span class="chip ghost">setter: ${esc(p.setter)}</span>
         <span class="chip ghost">${fmtNum(p.time_limit_ms)} ms · ${fmtNum(p.memory_limit_mb)} MB</span></div>
-      <div style="display:flex;gap:8px">
+      ${canEdit() ? `<div style="display:flex;gap:8px">
         <button class="btn primary" id="d-edit">${icon.edit} Edit</button>
         <button class="btn danger" id="d-del">${icon.trash} Delete</button>
-      </div>
+      </div>` : '<div class="note-box small">You are signed in with a read-only account. Sign in as an administrator or problem setter, such as <b>parth_modi</b>, to edit or delete problems.</div>'}
       <div><h4>Description</h4><p style="margin:0;white-space:pre-wrap">${esc(p.full_description)}</p></div>
       ${p.constraint_text ? `<div><h4>Constraints</h4><div class="code" style="white-space:pre-wrap">${esc(p.constraint_text)}</div></div>` : ''}
       ${p.sample_input || p.sample_output ? `<div class="grid g2"><div><h4>Sample input</h4><div class="code">${esc(p.sample_input || '')}</div></div><div><h4>Sample output</h4><div class="code">${esc(p.sample_output || '')}</div></div></div>` : ''}
@@ -312,14 +313,15 @@ async function openProblem(id) {
         { label: 'Sample', render: (r) => (r.sample_flag ? '<span class="chip teal">sample</span>' : '<span class="muted">hidden</span>') }, { label: 'Weight', num: true, key: 'weight' }
       ], { empty: 'No test cases stored for this problem.' })}</div>
       ${d.editorials.length ? `<div><h4>Editorial</h4>${table(d.editorials, [{ label: 'Time', key: 'time_complexity' }, { label: 'Space', key: 'space_complexity' }, { label: 'Status', render: (r) => status(r.status) }, { label: 'Views', num: true, render: (r) => fmtNum(r.view_count) }])}</div>` : ''}`;
-    $('#d-edit').onclick = () => problemForm(d);
-    $('#d-del').onclick = () => confirmDelete(p);
+    if ($('#d-edit')) $('#d-edit').onclick = () => problemForm(d);
+    if ($('#d-del')) $('#d-del').onclick = () => confirmDelete(p);
   } catch (e) { body.innerHTML = errorBox(e); }
 }
 
 async function problemForm(existing) {
   const meta = await getMeta();
-  const p = existing?.problem || { difficulty_level: 'Easy', time_limit_ms: 1000, memory_limit_mb: 256 };
+  const p = existing?.problem || { difficulty_level: 'Easy', time_limit_ms: 1000, memory_limit_mb: 256,
+    setter_id: meta.setters.some((x) => x.user_id === auth.user?.user_id) ? auth.user.user_id : undefined };
   const topicSet = new Set((existing?.topics || []).map((t) => t.topic_id));
   const compSet = new Set((existing?.companies || []).map((c) => c.company_id));
   const editing = Boolean(existing);
@@ -519,7 +521,7 @@ function loadContest(list) {
 
 // ---------------------------------------------------------------- Solvers
 async function pageSolvers(v, params) {
-  const uid = Number(params.get('u')) || 64;
+  const uid = Number(params.get('u')) || ((auth.user?.roles || []).includes('Solver') ? auth.user.user_id : 64);
   v.innerHTML = head({
     title: 'Solver Progress', srs: ['SRS 5', 'SRS 4', 'SRS 10'],
     desc: 'Streaks, solved counts and topic accuracy for one user, plus their rating graph, badges and what to practise next.',
@@ -1103,12 +1105,14 @@ document.addEventListener('keydown', (e) => {
 
 // ---------------------------------------------------------------- sign-in
 const ROLE_ORDER = ['Administrator', 'Problem setter', 'Contest manager', 'Moderation lead', 'Solver'];
+function roleOf(u) { return ((u?.roles || []).slice().sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b))[0] || 'member').toLowerCase(); }
+function canEdit() { return Boolean(auth.user?.can_edit); }
 function renderMe() {
   const u = auth.user; const el = $('#me');
   if (!u) { el.hidden = true; return; }
-  const role = (u.roles || []).sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b))[0] || 'Member';
+  const role = roleOf(u);
   el.hidden = false;
-  el.innerHTML = `<div class="av">${initials(u.username)}</div><div><b>${esc(u.username)}</b><span>${esc(role)}</span></div>
+  el.innerHTML = `<div class="av">${initials(u.username)}</div><a class="me-link" href="#/solvers${(u.roles || []).includes('Solver') ? `?u=${u.user_id}` : ''}" title="${(u.roles || []).includes('Solver') ? 'My progress' : 'Solver progress'}"><b>${esc(u.username)}</b><span>${esc(role[0].toUpperCase() + role.slice(1))}${u.can_edit ? '' : ', read-only'}</span></a>
     <button id="sign-out" title="Sign out" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg></button>`;
   $('#sign-out').onclick = signOut;
 }
@@ -1144,7 +1148,7 @@ $('#login-form').addEventListener('submit', async (e) => {
     $('#login-err').textContent = err.message;
   } finally { btn.disabled = false; btn.textContent = 'Sign in'; }
 });
-$('#demo-fill').addEventListener('click', () => { $('#login-user').value = 'parth_modi'; $('#login-pass').value = 'codepulse'; $('#login-go').focus(); });
+$$('[data-demo]').forEach((b) => b.addEventListener('click', () => { $('#login-user').value = b.dataset.demo; $('#login-pass').value = 'codepulse'; $('#login-go').focus(); }));
 $('#pw-toggle').addEventListener('click', () => {
   const p = $('#login-pass'); const show = p.type === 'password';
   p.type = show ? 'text' : 'password'; $('#pw-toggle').setAttribute('aria-label', show ? 'Hide password' : 'Show password');

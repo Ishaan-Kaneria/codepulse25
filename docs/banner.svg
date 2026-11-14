@@ -12,16 +12,12 @@
     <rect width="1280" height="380" fill="#17123F"/>
     <rect width="1280" height="380" fill="url(#m1)"/><rect width="1280" height="380" fill="url(#m2)"/><rect width="1280" height="380" fill="url(#m3)"/>
   </g>
-  <g transform="translate(64 64)">
-    <rect width="48" height="48" rx="15" fill="url(#lg)"/>
-    <rect x="11" y="15" width="4.5" height="19.5" rx="2.25" fill="#fff"/><rect x="19" y="21" width="4.5" height="13.5" rx="2.25" fill="#fff" fill-opacity=".7"/>
-    <rect x="27" y="10.5" width="4.5" height="24" rx="2.25" fill="#fff"/><rect x="35" y="18" width="4.5" height="16.5" rx="2.25" fill="#fff" fill-opacity=".7"/>
-  </g>
-  <text x="126" y="100" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#fff">CodePulse</text>
+  <svg x="64" y="62" width="50" height="50" viewBox="0 0 64 64"><defs>     <linearGradient id="cp-g" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">       <stop offset="0" stop-color="#4F46E5"/><stop offset=".5" stop-color="#8B5CF6"/><stop offset="1" stop-color="#EC4899"/>     </linearGradient>     <radialGradient id="cp-h" cx="20" cy="10" r="40" gradientUnits="userSpaceOnUse">       <stop offset="0" stop-color="#fff" stop-opacity=".26"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>     </radialGradient>   </defs>   <rect width="64" height="64" rx="18" fill="url(#cp-g)"/>   <rect width="64" height="64" rx="18" fill="url(#cp-h)"/>   <rect x="1" y="1" width="62" height="62" rx="17" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2"/>   <path d="M17 23l-7 9 7 9M47 23l7 9-7 9" fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>   <path d="M20 32h6l3.5-9 6 19 4-10H44" fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <text x="128" y="100" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#fff">CodePulse</text>
   <text x="64" y="178" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="40" font-weight="700" fill="#fff" letter-spacing="-1">Every submission, judged</text>
   <text x="64" y="226" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="40" font-weight="700" fill="#fff" letter-spacing="-1">and stored in PostgreSQL.</text>
-  <text x="64" y="272" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" fill="#C6C0EE">42 tables in BCNF · Node.js + Express + pg · live on Netlify</text>
-  <text x="64" y="320" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" fill="#8F89C4">Team 25 · MC212 Database Management Systems</text>
+  <text x="64" y="272" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" fill="#C6C0EE">42 tables in BCNF · Node.js · Express · pg</text>
+  <text x="64" y="320" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" fill="#8F89C4">codepulse25.netlify.app  ·  Team 25, MC212 DBMS</text>
   <rect x="616" y="56" width="624" height="284" rx="20" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".12"/>
   <text x="640" y="84" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#fff">Submissions per month</text>
   <text x="826" y="84" font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill="#A9A3D6">1,515 judged, 39 months</text>

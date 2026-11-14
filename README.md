@@ -1,9 +1,9 @@
 <p align="center">
-  <a href="https://codepulse-team25.netlify.app"><img src="docs/banner.svg" alt="CodePulse: every submission judged and stored in PostgreSQL, with a chart of submissions per month" width="100%"></a>
+  <a href="https://codepulse25.netlify.app"><img src="docs/banner.svg" alt="CodePulse: every submission judged and stored in PostgreSQL, with a chart of submissions per month" width="100%"></a>
 </p>
 
 <p align="center">
-  <a href="https://codepulse-team25.netlify.app"><img alt="Live demo" src="https://img.shields.io/badge/live_demo-codepulse--team25.netlify.app-3354F4?style=for-the-badge&logo=netlify&logoColor=white"></a>
+  <a href="https://codepulse25.netlify.app"><img alt="Live demo" src="https://img.shields.io/badge/live_demo-codepulse25.netlify.app-3354F4?style=for-the-badge&logo=netlify&logoColor=white"></a>
 </p>
 <p align="center">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-42_tables_·_BCNF-336791?logo=postgresql&logoColor=white">
@@ -12,6 +12,8 @@
   <img alt="node-postgres" src="https://img.shields.io/badge/pg-parameterised_SQL-1C9E6B">
   <img alt="No framework" src="https://img.shields.io/badge/frontend-vanilla_JS-F0B455">
   <img alt="Netlify" src="https://img.shields.io/badge/deploy-Netlify_+_Netlify_DB-00C7B7?logo=netlify&logoColor=white">
+  <img alt="bcrypt sign-in" src="https://img.shields.io/badge/auth-bcrypt_+_role_tables-8B5CF6">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-EC4899"></a>
 </p>
 
 <p align="center">
@@ -36,7 +38,7 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 ## Highlights
 
 - **A live overview.** Submissions and accepted submissions per month as a smooth chart (point at a month for its numbers), six headline stats, the latest verdicts and the verdict mix, all read from PostgreSQL when the page opens.
-- **Sign-in against the `users` table.** Accounts are the real rows in `users`. Signing in updates `last_login_timestamp` and `session_count`, and only a signed-in user can create, edit or delete problems.
+- **Sign-in that uses the database.** Accounts are the rows in `users`; the password is verified with bcrypt against `users.password_hash`; roles come from the role tables. Administrators and problem setters can create, edit and delete problems, solvers get a read-only view, and every sign-in updates `last_login_timestamp` and `session_count`.
 - **Real CRUD, real constraints.** Create, edit and delete problems with their topic and company tags in one transaction. Deleting a problem that still has submissions, contest entries or posts is refused by a foreign key, and the app explains which one.
 - **Nothing is hidden.** A *View SQL* button sits on every screen. The SQL lives on the server; the browser only sends a query name and typed values, which reach PostgreSQL as `$1, $2 …` placeholders.
 - **Jump anywhere.** Press <kbd>Ctrl</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) to open the command palette, then type a screen name, a problem title or a problem id.
@@ -81,10 +83,20 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 
 ## Signing in
 
-Every row in `users` is an account. The stored `password_hash` values are sample bcrypt hashes whose passwords are unknown,
-so for the demo all accounts share one password, checked on the server: **`codepulse`** (set `DEMO_PASSWORD` to change it).
-Try `parth_modi`, an administrator. The server returns an HMAC-signed token (`AUTH_SECRET`), and the API refuses
-`POST`, `PUT` and `DELETE` on `/api/problems` without it.
+| Try | Username | Password | What you can do |
+|---|---|---|---|
+| Administrator | `parth_modi` | `codepulse` | Everything, including creating, editing and deleting problems |
+| Solver | `ishaan_sinha` | `codepulse` | Browse every screen; problems are read-only |
+
+Every one of the 400 accounts in `users` works with the password `codepulse`. The sample data shipped random bcrypt strings in
+`password_hash`, so nobody could sign in with them; [`db/03_demo_passwords.sql`](db/03_demo_passwords.sql) replaces them with a real,
+individually salted bcrypt hash of the demo password for each user. The server then:
+
+1. finds the user by username or email (`$1` placeholder),
+2. checks the password with `bcrypt.compare` against `users.password_hash`,
+3. reads the user's roles from `platform_administrators`, `problem_setters`, `contest_managers`, `moderation_leads` and `solvers`,
+4. records the sign-in with `UPDATE users SET last_login_timestamp = NOW(), session_count = session_count + 1 WHERE user_id = $1`,
+5. returns an HMAC-signed token (`AUTH_SECRET`). `POST`, `PUT` and `DELETE` on `/api/problems` need that token **and** an administrator or problem-setter role, checked against the role tables on every request.
 
 ## How it fits together
 
@@ -118,7 +130,7 @@ Some design choices the screens make visible:
 - **Leaderboards are pre-calculated** in `participations`, so a contest page reads ranks instead of re-scoring anyone.
 - **Company frequency is a series of dated snapshots** keyed by `(company_id, snapshot_date, window_days)`, never overwritten.
 
-The schema is in [`db/01_create_tables.sql`](db/01_create_tables.sql) and the data in [`db/02_insert_data.sql`](db/02_insert_data.sql).
+The schema is in [`db/01_create_tables.sql`](db/01_create_tables.sql), the data in [`db/02_insert_data.sql`](db/02_insert_data.sql), and the demo passwords in [`db/03_demo_passwords.sql`](db/03_demo_passwords.sql).
 
 ## Run it
 
@@ -130,7 +142,7 @@ You need Node.js 18 or newer and PostgreSQL.
 npm install
 cp .env.example .env          # Windows: copy .env.example .env
 # set PGDATABASE, PGUSER and PGPASSWORD in .env
-npm run db:load               # creates the 42 tables and loads every row (drops the public schema first)
+npm run db:load               # creates the 42 tables, loads every row, sets the demo passwords (drops the public schema first)
 npm run test:conn             # prints the PostgreSQL version and "Tables in public schema: 42"
 npm start                     # http://localhost:3000
 ```
@@ -147,8 +159,9 @@ creates `.env` and runs `npm start`. Port 3000 opens in a preview tab.
 The site uses **Netlify Database**, Netlify's built-in PostgreSQL, so there is no separate database account to set up.
 
 1. Import this repository in Netlify (**Add new site → Import an existing project**). The build settings come from `netlify.toml`.
-2. Deploy. Netlify creates the database and applies the two migrations in [`netlify/database/migrations/`](netlify/database/migrations), which are our two SQL files.
-3. Open the site. The rail should say **Live, 42 tables in netlifydb**.
+2. Deploy. Netlify creates the database and applies the three migrations in [`netlify/database/migrations/`](netlify/database/migrations), which are our SQL files.
+3. Add an `AUTH_SECRET` environment variable (any long random string) so sign-in tokens are signed with your own key.
+4. Open the site and sign in. The rail should say **Live, 42 tables in netlifydb**.
 
 To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL` in the site's environment variables, load the data with
 `DATABASE_URL="…" npm run db:load`, and redeploy. `DATABASE_URL` wins over `NETLIFY_DB_URL`.
@@ -187,7 +200,7 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 │   ├── app.js                Express routes, health check, error handling
 │   ├── index.js              starts the server locally or in a Codespace
 │   ├── routes/problems.js    INSERT, SELECT, UPDATE, DELETE on problems     Lab 11 B
-│   ├── routes/auth.js        demo sign-in against the users table
+│   ├── routes/auth.js        bcrypt sign-in against users, role checks
 │   └── queries/
 │       ├── srs.js            read-only queries behind every screen
 │       └── lab10a.js         the 30 Lab 10A queries
@@ -196,7 +209,7 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 │   ├── functions/api.mjs     runs the Express app as a Netlify Function
 │   └── database/migrations/  the two SQL files, applied by Netlify Database
 ├── scripts/                  test-connection.js, load-db.js
-├── db/                       01_create_tables.sql, 02_insert_data.sql
+├── db/                       01_create_tables.sql, 02_insert_data.sql, 03_demo_passwords.sql
 ├── docs/                     banner and screenshots for this page
 └── .devcontainer/            GitHub Codespaces: Node 22 + PostgreSQL 16
 ```
@@ -211,3 +224,17 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 | B. CRUD code | The `POST /`, `GET /`, `PUT /:id` and `DELETE /:id` handlers in `server/routes/problems.js`, each with its SQL and the `rowCount` toast |
 | C. Frontend | The new problem form, the problem table, the edit form, the delete confirmation, and the same row in pgAdmin before and after |
 | D. Reflection | 150 to 250 words on what went wrong and what you learned |
+
+## Team
+
+| | Name | Student ID |
+|---|---|---|
+| <img src="docs/logo.svg" width="20" alt=""> | Ishaan Kaneria | 202503004 |
+| <img src="docs/logo.svg" width="20" alt=""> | Mann Chauhan | 202503045 |
+
+Built for MC212 Database Management Systems.
+
+## License
+
+Released under the [MIT License](LICENSE). The sample data in `db/` is synthetic and made for this course.
+

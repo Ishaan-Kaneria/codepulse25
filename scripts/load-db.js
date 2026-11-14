@@ -6,7 +6,7 @@ const path = require('path');
 const { pool } = require('../server/db');
 
 (async () => {
-  const files = ['01_create_tables.sql', '02_insert_data.sql'];
+  const files = ['01_create_tables.sql', '02_insert_data.sql', '03_demo_passwords.sql'];
   try {
     for (const f of files) {
       const sql = fs.readFileSync(path.join(__dirname, '..', 'db', f), 'utf8');

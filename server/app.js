@@ -27,8 +27,8 @@ api.get('/health', async (req, res, next) => {
 // Sign-in (demo)
 api.use('/auth', auth);
 
-// Main table CRUD (writes need a signed-in user)
-api.use('/problems', (req, res, next) => (req.method === 'GET' ? next() : auth.requireUser(req, res, next)), problems);
+// Main table CRUD (writes need a signed-in administrator or problem setter)
+api.use('/problems', (req, res, next) => (req.method === 'GET' ? next() : auth.requireUser(req, res, () => auth.requireEditor(req, res, next))), problems);
 
 // Named read-only queries for every SRS screen: GET /api/q/<key>?param=value
 function readParams(def, query) {

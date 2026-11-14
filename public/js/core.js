@@ -165,7 +165,8 @@ export function highlightSQL(sql) {
 
 // ---------- drawer / modal / toast ------------------------------------------------------------
 const scrim = () => $('#scrim');
-export function openDrawer(title, html) {
+export function openDrawer(title, html, { wide = false } = {}) {
+  $('#drawer').classList.toggle('wide', wide);
   $('#drawer-title').innerHTML = title;
   $('#drawer-body').innerHTML = html;
   $('#drawer').classList.add('on'); $('#drawer').setAttribute('aria-hidden', 'false');
@@ -198,12 +199,12 @@ export function errorBox(err) {
 // Show the SQL behind one or more screen widgets
 export async function showSQL(keys, title = 'SQL behind this screen') {
   const list = Array.isArray(keys) ? keys : [keys];
-  const body = openDrawer(esc(title), '<div class="skeleton"></div><div class="skeleton"></div>');
+  const body = openDrawer(esc(title), '<div class="skeleton"></div><div class="skeleton"></div>', { wide: true });
   try {
     const items = await Promise.all(list.map((k) => api(`/api/sql/${k}`)));
     body.innerHTML = `<div class="note-box">These statements live on the server. The browser only sends the query name and values,
       which reach PostgreSQL as <code>$1, $2 …</code> placeholders, so user input can never change the SQL.</div>` +
-      items.map((it) => `<div><h4>${esc(it.key)} · ${esc(it.srs)}${it.params.length ? ` · params: ${it.params.map(esc).join(', ')}` : ''}</h4>
+      items.map((it) => `<div><h4><span class="mono">${esc(it.key)}</span> <span class="chip ghost">${esc(it.srs)}</span>${it.params.length ? `<span class="chip">params: ${it.params.map(esc).join(', ')}</span>` : ''}</h4>
         <div class="code">${highlightSQL(it.sql.trim())}</div></div>`).join('');
   } catch (e) { body.innerHTML = errorBox(e); }
 }
