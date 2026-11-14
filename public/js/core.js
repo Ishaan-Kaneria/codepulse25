@@ -130,9 +130,9 @@ export function columns(items, { alt = false } = {}) {
       <div class="stick ${alt ? 'alt' : ''}" style="height:${Math.max(3, (100 * i.value) / top) * 0.78}%"></div>
       <small>${esc(i.label)}</small></div>`).join('')}</div>`;
 }
-export function lineChart(points, { height = 190 } = {}) {
+export function lineChart(points, { height = 190, bare = false } = {}) {
   if (!points.length) return '<div class="empty">No data.</div>';
-  const W = 640, H = height, P = { l: 44, r: 16, t: 14, b: 26 };
+  const W = 640, H = height, P = bare ? { l: 6, r: 6, t: 10, b: 8 } : { l: 44, r: 16, t: 14, b: 26 };
   const ys = points.map((p) => p.y);
   let lo = Math.min(...ys), hi = Math.max(...ys);
   if (lo === hi) { lo -= 10; hi += 10; }
@@ -144,10 +144,10 @@ export function lineChart(points, { height = 190 } = {}) {
   const ticks = [0, 0.5, 1].map((t) => lo + t * (hi - lo));
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <defs><linearGradient id="sparkfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--accent);stop-opacity:.22"/><stop offset="1" style="stop-color:var(--accent);stop-opacity:0"/></linearGradient></defs>
-    ${ticks.map((t) => `<line class="grid-l" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${P.l - 8}" y="${y(t) + 4}" text-anchor="end">${Math.round(t)}</text>`).join('')}
+    ${ticks.map((t) => `<line class="grid-l" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/>${bare ? '' : `<text x="${P.l - 8}" y="${y(t) + 4}" text-anchor="end">${Math.round(t)}</text>`}`).join('')}
     <path class="area" d="${area}"/><path class="line" d="${line}"/>
     ${points.map((p, i) => `<circle class="pt" cx="${x(i)}" cy="${y(p.y)}" r="4"><title>${esc(p.label)}: ${p.y}</title></circle>`).join('')}
-    ${points.map((p, i) => (points.length <= 10 || i % Math.ceil(points.length / 8) === 0 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${esc(p.short || '')}</text>` : '')).join('')}
+    ${bare ? '' : points.map((p, i) => (points.length <= 10 || i % Math.ceil(points.length / 8) === 0 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${esc(p.short || '')}</text>` : '')).join('')}
   </svg>`;
 }
 

@@ -19,6 +19,7 @@ const NAV = [
   { id: 'premium', label: 'Premium & Access', srs: '6', icon: I('<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/>') },
   { id: 'companies', label: 'Companies & Editorials', srs: '7', icon: I('<path d="M4 21V8l6-4v17M10 21h10V10l-6-2M7 10v.01M7 14v.01M7 18v.01M14 13h3M14 17h3"/>') },
   { group: 'Community' },
+  { id: 'people', label: 'People', srs: '5·8', icon: I('<path d="M16 19a4 4 0 0 0-8 0M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM20 19a3 3 0 0 0-3-3M17 5a3 3 0 0 1 0 6M4 19a3 3 0 0 1 3-3M7 5a3 3 0 0 0 0 6"/>') },
   { id: 'community', label: 'Discussions', srs: '8', icon: I('<path d="M4 5h16v11H9l-5 4z"/>') },
   { id: 'moderation', label: 'Moderation', srs: '9', icon: I('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>') },
   { id: 'plans', label: 'Study Plans & Badges', srs: '10', icon: I('<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M9 7h6"/>') },
@@ -43,6 +44,12 @@ const SRS = [
   { n: 11, t: 'Code Deduplication', d: 'SHA-256 code blobs catch copied code', page: 'integrity' },
   { n: 12, t: 'Disjoint Failure Logging', d: 'Composite keys keep log types apart', page: 'integrity' }
 ];
+
+const profileUrl = (name) => `#/u/${encodeURIComponent(name)}`;
+const ROLE_SHORT = { Administrator: 'Admin', 'Problem setter': 'Setter', 'Contest manager': 'Contest manager', 'Moderation lead': 'Moderator', Solver: 'Solver' };
+const roleChips = (roles = []) => roles.map((r) => `<span class="role role-${esc(r.split(' ')[0].toLowerCase())}">${esc(ROLE_SHORT[r] || r)}</span>`).join('');
+const hue = (name) => [...String(name)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+const avatar = (name, size = '') => `<span class="pav ${size}" style="--h:${hue(name)}">${initials(name)}</span>`;
 
 function renderNav(active) {
   $('#nav').innerHTML = NAV.map((n) => n.group
@@ -449,7 +456,7 @@ async function openSubmission(id) {
     $('#drawer-title').innerHTML = `Submission #${s.submission_id} ${verdict(s.verdict)}`;
     body.innerHTML = `
       <dl class="kv">
-        <dt>User</dt><dd><a href="#/solvers?u=${s.user_id}">${esc(s.username)}</a></dd>
+        <dt>User</dt><dd><a href="${profileUrl(s.username)}">${esc(s.username)}</a></dd>
         <dt>Problem</dt><dd>${esc(s.title)} <span class="muted">#${s.problem_id}</span></dd>
         <dt>Verdict</dt><dd>${verdict(s.verdict)} ${esc(VERDICT_NAMES[s.verdict])}</dd>
         <dt>Runtime</dt><dd>${fmtNum(s.runtime_ms)} ms <span class="muted">(limit ${fmtNum(s.time_limit_ms)} ms)</span></dd>
@@ -488,7 +495,7 @@ async function pageContests(v) {
     const rows = (await q('contests.top_rated')).rows;
     el.innerHTML = card('Global rating ladder', table(rows, [
       { label: 'Rank', render: (r) => `<span class="rank ${r.global_rank <= 3 ? `r${r.global_rank}` : ''}">${r.global_rank}</span>` },
-      { label: 'Solver', render: (r) => `<a href="#/solvers?u=${r.user_id}" class="strong">${esc(r.username)}</a>` },
+      { label: 'Solver', render: (r) => `<a href="${profileUrl(r.username)}" class="strong">${esc(r.username)}</a>` },
       { label: 'Country', key: 'country' }, { label: 'Rating', num: true, render: (r) => `<b>${fmtNum(r.contest_rating)}</b>` },
       { label: 'Contests', num: true, key: 'contests_played' }
     ]), { flush: true, sub: 'RANK() over contest_rating' });
@@ -500,7 +507,7 @@ function loadContest(list) {
     const rows = (await q('contests.leaderboard', { contest_id: contestId })).rows;
     el.innerHTML = card(esc(c.title || 'Leaderboard'), table(rows, [
       { label: 'Rank', render: (r) => (r.disqualification_flag ? '<span class="st st-bad">DQ</span>' : `<span class="rank ${r.current_rank <= 3 ? `r${r.current_rank}` : ''}">${r.current_rank}</span>`) },
-      { label: 'Solver', render: (r) => `<a class="strong" href="#/solvers?u=${r.user_id}">${esc(r.username)}</a><div class="small muted">${esc(r.country || '')}</div>` },
+      { label: 'Solver', render: (r) => `<a class="strong" href="${profileUrl(r.username)}">${esc(r.username)}</a><div class="small muted">${esc(r.country || '')}</div>` },
       { label: 'Solved', num: true, key: 'problems_solved' }, { label: 'Score', num: true, render: (r) => `<b>${fmtNum(r.total_score)}</b>` },
       { label: 'Penalty', num: true, render: (r) => `${fmtNum(r.time_penalty)} min` },
       { label: 'New rating', num: true, render: (r) => fmtNum(r.new_rating) }
@@ -565,7 +572,7 @@ async function loadProfile(uid) {
     host.innerHTML = `
       <section class="card fade-in">
         <div class="profile-head"><div class="avatar">${initials(u.username)}</div>
-          <div><h2>${esc(u.username)}</h2><div class="muted small">#${u.user_id} · ${esc(u.country || '—')} · joined ${fmtDate(u.registration_date)} · last seen ${fmtDate(u.last_login_timestamp)}</div>
+          <div><h2><a href="${profileUrl(u.username)}" class="plain">${esc(u.username)}</a></h2><div class="muted small">#${u.user_id} · ${esc(u.country || '—')} · joined ${fmtDate(u.registration_date)} · last seen ${fmtDate(u.last_login_timestamp)}</div>
           <div class="pill-row">${(u.roles || []).map((r) => `<span class="chip ink">${esc(r)}</span>`).join('')}${u.subscription ? `<span class="chip">${esc(u.subscription)}</span>` : ''}</div></div></div>
         <div class="stat-strip">
           <div><b>${fmtNum(u.contest_rating)}</b><span>contest rating</span></div>
@@ -590,7 +597,7 @@ async function loadProfile(uid) {
       </div>
       <div class="grid g2">
         ${card('Practise next', suggest.rows.length ? table(suggest.rows, [{ label: 'Weak topic', wrap: true, render: (r) => `${esc(r.topic_name)} <span class="muted small">${pct(r.topic_accuracy)}</span>` }, { label: 'Problem', wrap: true, render: (r) => esc(r.title) }, { label: 'Level', render: (r) => diff(r.difficulty) }]) : '<div class="empty">No weak-topic suggestions for this user.</div>', { flush: true, sub: 'lowest topic accuracy, not yet solved' })}
-        ${card('People to follow', follow.rows.length ? table(follow.rows, [{ label: 'User', render: (r) => `<a href="#/solvers?u=${r.user_id}" class="strong">${esc(r.username)}</a>` }, { label: 'Country', key: 'country' }, { label: 'Via', num: true, render: (r) => `${r.followed_by_my_followees} mutual` }]) : '<div class="empty">No suggestions from this user\'s network.</div>', { flush: true, sub: 'followed by people they follow · SRS 8' })}
+        ${card('People to follow', follow.rows.length ? table(follow.rows, [{ label: 'User', render: (r) => `<a href="${profileUrl(r.username)}" class="strong">${esc(r.username)}</a>` }, { label: 'Country', key: 'country' }, { label: 'Via', num: true, render: (r) => `${r.followed_by_my_followees} mutual` }]) : '<div class="empty">No suggestions from this user\'s network.</div>', { flush: true, sub: 'followed by people they follow · SRS 8' })}
       </div>`;
     const recentCard = $$('.card', host).find((c) => c.textContent.includes('Recent submissions'));
     if (recentCard) bindRows(recentCard, recent.rows, (r) => openSubmission(r.submission_id));
@@ -754,7 +761,7 @@ async function pageCommunity(v) {
   fill('#cm-top', async (el) => {
     const rows = (await q('community.contributors')).rows;
     el.innerHTML = card('Top contributors', table(rows, [
-      { label: 'User', render: (r) => `<a class="strong" href="#/solvers?u=${r.user_id}">${esc(r.username)}</a><div class="small muted">${esc(r.country || '')}</div>` },
+      { label: 'User', render: (r) => `<a class="strong" href="${profileUrl(r.username)}">${esc(r.username)}</a><div class="small muted">${esc(r.country || '')}</div>` },
       { label: 'Rep.', num: true, render: (r) => `<b>${fmtNum(r.contribution_point)}</b>` }, { label: 'Followers', num: true, key: 'followers' }
     ]), { flush: true, sub: 'by reputation points' });
   });
@@ -855,7 +862,7 @@ async function pagePlans(v) {
   });
   fill('#bd-due', async (el) => {
     const rows = (await q('badges.eligible')).rows;
-    el.innerHTML = card('Streak badges due', table(rows, [{ label: 'User', render: (r) => `<a href="#/solvers?u=${r.user_id}">${esc(r.username)}</a>` }, { label: 'Streak', num: true, render: (r) => `${r.current_daily_streak} d` }, { label: 'Due', key: 'badge_due' }]), { flush: true, sub: 'streak ≥ 7, no Streak badge yet' });
+    el.innerHTML = card('Streak badges due', table(rows, [{ label: 'User', render: (r) => `<a href="${profileUrl(r.username)}">${esc(r.username)}</a>` }, { label: 'Streak', num: true, render: (r) => `${r.current_daily_streak} d` }, { label: 'Due', key: 'badge_due' }]), { flush: true, sub: 'streak ≥ 7, no Streak badge yet' });
   });
 }
 function loadPlan(list) {
@@ -928,6 +935,184 @@ async function pageIntegrity(v) {
   });
 }
 
+// ---------------------------------------------------------------- People directory
+const peopleState = { q: '', role: '', sort: 'rating' };
+async function pagePeople(v) {
+  v.innerHTML = head({
+    title: 'People', srs: ['SRS 5', 'SRS 8'],
+    desc: 'Everyone on CodePulse. Search by name, country or id, filter by role, and open anyone\'s public profile.',
+    sql: ['people.directory']
+  }) + `<section class="card mb">
+      <div class="filters">
+        <div class="search" style="flex:1 1 320px">${icon.search}<input class="input" id="pp-q" style="width:100%" placeholder="Search people by name, country or id" value="${esc(peopleState.q)}" autocomplete="off"></div>
+        <div class="seg" id="pp-role">${[['', 'Everyone'], ['solver', 'Solvers'], ['setter', 'Setters'], ['manager', 'Managers'], ['moderator', 'Moderators'], ['admin', 'Admins']]
+          .map(([k, l]) => `<button data-r="${k}" class="${peopleState.role === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <select class="input" id="pp-sort">${[['rating', 'Highest rating'], ['reputation', 'Most reputation'], ['solved', 'Most solved'], ['followers', 'Most followers'], ['newest', 'Newest members']]
+          .map(([k, l]) => `<option value="${k}" ${peopleState.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      </div>
+      <div class="people-meta" id="pp-meta"></div>
+    </section>
+    <div class="people" id="pp-grid">${'<div class="person sk"></div>'.repeat(8)}</div>`;
+  const load = async () => {
+    const grid = $('#pp-grid'); if (!grid) return;
+    try {
+      const rows = (await q('people.directory', peopleState)).rows;
+      $('#pp-meta').textContent = rows.length === 60 ? 'Showing the first 60 matches. Refine the search to narrow it down.' : `${rows.length} ${rows.length === 1 ? 'person' : 'people'}`;
+      grid.innerHTML = rows.length ? rows.map((u) => `<a class="person" href="${profileUrl(u.username)}">
+          <div class="person-top">${avatar(u.username, 'lg')}<div class="person-id"><b>${esc(u.username)}</b><span>${esc(u.country || 'Unknown country')}</span></div>
+            ${u.global_rank ? `<span class="rank-pill" title="Global rank by contest rating">#${u.global_rank}</span>` : ''}</div>
+          <div class="person-roles">${roleChips(u.roles)}</div>
+          <div class="person-stats">
+            <div><b>${u.contest_rating ? fmtNum(u.contest_rating) : '—'}</b><span>rating</span></div>
+            <div><b>${u.total_problems_solved !== null ? fmtNum(u.total_problems_solved) : '—'}</b><span>solved</span></div>
+            <div><b>${fmtNum(u.contribution_point)}</b><span>points</span></div>
+            <div><b>${fmtNum(u.followers)}</b><span>fans</span></div>
+          </div></a>`).join('')
+        : `<div class="card empty" style="grid-column:1/-1">No one matches “${esc(peopleState.q)}”. Try part of a username, a country such as India, or a user id.</div>`;
+    } catch (e) { grid.innerHTML = errorBox(e); }
+  };
+  let t; $('#pp-q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { peopleState.q = e.target.value.trim(); load(); }, 220); };
+  $$('#pp-role button').forEach((b) => b.onclick = () => { peopleState.role = b.dataset.r; $$('#pp-role button').forEach((x) => x.classList.toggle('on', x === b)); load(); });
+  $('#pp-sort').onchange = (e) => { peopleState.sort = e.target.value; load(); };
+  load();
+  $('#pp-q').focus();
+}
+
+// ---------------------------------------------------------------- Public profile  (#/u/<username>)
+const profTab = { k: 'subs' };
+async function pageProfile(v, params, name) {
+  v.innerHTML = `<div class="profile-wrap">${loading}</div>`;
+  let uid;
+  try {
+    const found = (await q('users.lookup', { username: decodeURIComponent(name || '') })).rows[0];
+    if (!found) {
+      v.innerHTML = `<section class="card empty-state"><h2>No one called “${esc(decodeURIComponent(name || ''))}”</h2>
+        <p class="muted">The username may be spelled differently. Search the people directory instead.</p><a class="btn primary" href="#/people">${icon.search} Search people</a></section>`;
+      return;
+    }
+    uid = found.user_id;
+  } catch (e) { v.innerHTML = errorBox(e); return; }
+
+  const [prof, split, standing, langs, badges, rating, activity, recent, contests, posts, network, mastery] = await Promise.all([
+    q('users.profile', { user_id: uid }), q('users.solved_split', { user_id: uid }), q('users.standing', { user_id: uid }),
+    q('users.languages', { user_id: uid }), q('users.badges', { user_id: uid }), q('users.rating', { user_id: uid }),
+    q('users.activity', { user_id: uid }), q('users.recent', { user_id: uid }), q('users.contests', { user_id: uid }),
+    q('users.posts', { user_id: uid }), q('users.network', { user_id: uid }), q('users.mastery', { user_id: uid })
+  ].map((pr) => pr.catch(() => ({ rows: [] }))));
+  const u = prof.rows[0];
+  if (!u) { v.innerHTML = errorBox(new Error('This profile could not be loaded.')); return; }
+  document.title = `${u.username} | CodePulse`;
+  const st = standing.rows[0];
+  const isMe = auth.user?.user_id === u.user_id;
+  const roles = (u.roles || []).map((r) => ({ 'Platform Admin': 'Administrator', 'Problem Setter': 'Problem setter', 'Contest Manager': 'Contest manager', 'Moderation Lead': 'Moderation lead' }[r] || r));
+  const solvedTotal = split.rows.reduce((a, r) => a + r.solved, 0);
+  const probTotal = split.rows.reduce((a, r) => a + r.total, 0) || 1;
+  const followers = network.rows.filter((r) => r.side === 'follower');
+  const following = network.rows.filter((r) => r.side === 'following');
+  const dcol = { Easy: 'var(--easy)', Medium: 'var(--medium)', Hard: 'var(--hard)' };
+  const totalSubs = activity.rows.reduce((a, r) => a + r.n, 0);
+  const activeDays = activity.rows.reduce((a, r) => a + r.active_days, 0);
+  const R = 52, C = 2 * Math.PI * R;
+  let acc = 0;
+  const ringArcs = split.rows.filter((r) => r.solved > 0).map((r) => {
+    const len = (r.solved / probTotal) * C; const seg = `<circle r="${R}" cx="60" cy="60" style="stroke:${dcol[r.difficulty]}" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-acc}"/>`;
+    acc += len; return seg;
+  }).join('');
+
+  v.innerHTML = `<div class="profile-wrap">
+    <aside class="card pcard">
+      <div class="pcard-top">${avatar(u.username, 'xl')}
+        <h1>${esc(u.username)}</h1>
+        <div class="muted small">${esc(u.country || 'Unknown country')} · #${u.user_id}</div>
+        <div class="person-roles" style="justify-content:center">${roleChips(roles)}</div>
+        ${st ? `<div class="pcard-rank"><b>Rank ${fmtNum(st.global_rank)}</b><span>of ${fmtNum(st.solvers)} solvers, ahead of ${pct(st.beats_pct)}</span></div>` : ''}
+        <div class="pcard-actions">${isMe ? `<a class="btn sm" href="#/solvers?u=${u.user_id}">${icon.edit} My dashboard</a>` : ''}<button class="btn sm" id="copy-link">${icon.arrow} Copy profile link</button></div>
+      </div>
+      <div class="pcard-follow"><div><b>${fmtNum(followers.length)}</b><span>followers</span></div><div><b>${fmtNum(following.length)}</b><span>following</span></div><div><b>${fmtNum(u.contribution_point)}</b><span>reputation</span></div></div>
+      <dl class="pcard-facts">
+        <dt>Joined</dt><dd>${fmtDate(u.registration_date)}</dd>
+        <dt>Last seen</dt><dd>${fmtDate(u.last_login_timestamp)}</dd>
+        <dt>Plan</dt><dd>${esc(u.subscription || 'Free')}</dd>
+        <dt>Sessions</dt><dd>${fmtNum(u.session_count)}</dd>
+      </dl>
+      ${langs.rows.length ? `<div class="pcard-sec"><h4>Languages</h4>${langs.rows.map((l) => `<div class="lang-row"><span class="lang-dot" style="--h:${hue(l.language)}"></span>${esc(l.language)}<span class="muted small">${fmtNum(l.solved)} solved</span></div>`).join('')}</div>` : ''}
+      ${mastery.rows.length ? `<div class="pcard-sec"><h4>Strongest topics</h4><div class="pill-row">${mastery.rows.slice(0, 6).map((m) => `<span class="chip teal">${esc(m.topic_name)} <b>${Math.round(m.topic_accuracy)}%</b></span>`).join('')}</div></div>` : ''}
+      ${badges.rows.length ? `<div class="pcard-sec"><h4>Badges <span class="muted">${badges.rows.length}</span></h4><div class="badge-row">${badges.rows.slice(0, 6).map((b) => `<span class="badge-chip" title="${esc(b.badge_description)}, awarded ${fmtDate(b.award_date)}"><i class="b-${esc(b.category.toLowerCase())}"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg></i>${esc(b.badge_name)}</span>`).join('')}</div></div>` : ''}
+    </aside>
+
+    <div class="pmain">
+      <div class="grid g2 eq">
+        <section class="card"><div class="card-head"><h3>Problems solved</h3><span class="sub">distinct AC</span></div>
+          <div class="card-body solved-box">
+            <div class="solved-ring"><svg viewBox="0 0 120 120"><circle r="${R}" cx="60" cy="60" style="stroke:var(--sunk)"/>${ringArcs}</svg>
+              <div class="center"><b>${solvedTotal}</b><span>/ ${probTotal} solved</span></div></div>
+            <div class="solved-bars">${split.rows.map((r) => `<div class="sb"><div class="sb-top"><span class="tag d-${esc(r.difficulty)}">${esc(r.difficulty)}</span><span><b>${r.solved}</b><span class="muted">/${r.total}</span></span></div>
+              <div class="bar-track"><div class="bar-fill" style="width:${r.total ? (100 * r.solved) / r.total : 0}%;background:${dcol[r.difficulty]}"></div></div></div>`).join('')}</div>
+          </div></section>
+        <section class="card"><div class="card-head"><h3>Contest rating</h3><span class="sub">${contests.rows.length ? `${contests.rows.length} contests attended` : 'no contests yet'}</span></div>
+          <div class="card-body">
+            ${u.contest_rating ? `<div class="rating-big"><b>${fmtNum(u.contest_rating)}</b>${st ? `<span>top ${pct(100 - st.beats_pct)}</span>` : ''}</div>` : '<div class="muted">This account does not take part in contests.</div>'}
+            ${rating.rows.length > 1 ? `${lineChart(rating.rows.map((r) => ({ y: r.new_rating, label: `${r.contest}, ${fmtDate(r.contest_date)}` })), { height: 140, bare: true })}
+              <div class="chart-range"><span>${fmtDate(rating.rows[0].contest_date)}</span><span>${rating.rows.length} rated contests</span><span>${fmtDate(rating.rows[rating.rows.length - 1].contest_date)}</span></div>` : rating.rows.length ? '<div class="muted small">One rated contest so far.</div>' : ''}
+          </div></section>
+      </div>
+
+      <section class="card"><div class="card-head"><h3>Activity</h3><span class="sub">${fmtNum(totalSubs)} submissions on ${fmtNum(activeDays)} active days${u.current_daily_streak ? `, current streak ${u.current_daily_streak} days` : ''}</span></div>
+        <div class="card-body">${activity.rows.length ? activityStrip(activity.rows) : '<div class="muted">No submissions yet.</div>'}</div></section>
+
+      <section class="card">
+        <div class="card-head"><div class="seg" id="ptabs">${[['subs', `Recent submissions`], ['contests', `Contests`], ['posts', `Posts`], ['network', `Network`]].map(([k, l]) => `<button data-k="${k}" class="${profTab.k === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div id="ptab-body"></div>
+      </section>
+    </div>
+  </div>`;
+
+  const tabs = {
+    subs: () => table(recent.rows, [
+      { label: 'Verdict', render: (r) => verdict(r.verdict) }, { label: 'Problem', wrap: true, render: (r) => `<span class="strong">${esc(r.title)}</span>` },
+      { label: 'Language', key: 'language' }, { label: 'Runtime', num: true, render: (r) => (r.runtime_ms === null ? '<span class="muted">none</span>' : `${fmtNum(r.runtime_ms)} ms`) },
+      { label: 'When', render: (r) => fmtDate(r.submission_timestamp, true) }], { onRow: true, empty: 'No submissions yet.' }),
+    contests: () => table(contests.rows, [
+      { label: 'Contest', wrap: true, render: (r) => `<span class="strong">${esc(r.title)}</span><div class="small muted">${esc(r.contest_type)} · ${fmtDate(r.start_time)}</div>` },
+      { label: 'Rank', num: true, render: (r) => (r.disqualification_flag ? '<span class="st st-bad">DQ</span>' : `${fmtNum(r.current_rank)} <span class="muted small">/ ${r.players}</span>`) },
+      { label: 'Solved', num: true, key: 'problems_solved' }, { label: 'Score', num: true, key: 'total_score' },
+      { label: 'Rating', num: true, render: (r) => (r.new_rating ? fmtNum(r.new_rating) : '—') }], { empty: 'Has not entered a contest yet.' }),
+    posts: () => table(posts.rows, [
+      { label: 'Post', wrap: true, render: (r) => `<span class="strong">${esc(r.title)}</span><div class="small muted">${esc(r.problem)} · ${fmtDate(r.creation_timestamp)}</div>` },
+      { label: 'Upvotes', num: true, key: 'upvotes' }, { label: 'Comments', num: true, key: 'comments' }, { label: 'Status', render: (r) => status(r.status) }], { onRow: true, empty: 'Has not posted yet.' }),
+    network: () => `<div class="net">${[['Followers', followers], ['Following', following]].map(([t, list]) => `<div><h4>${t} <span class="muted">${list.length}</span></h4>
+        ${list.length ? `<div class="net-list">${list.map((x) => `<a class="net-item" href="${profileUrl(x.username)}">${avatar(x.username, 'sm')}<span><b>${esc(x.username)}</b><small>${esc(x.country || '')}</small></span></a>`).join('')}</div>` : '<div class="muted small">No one yet.</div>'}</div>`).join('')}</div>`
+  };
+  const show = () => {
+    const body = $('#ptab-body'); body.innerHTML = tabs[profTab.k]();
+    if (profTab.k === 'subs') bindRows(body, recent.rows, (r) => openSubmission(r.submission_id));
+    if (profTab.k === 'posts') bindRows(body, posts.rows, (r) => openPost(r.post_id));
+  };
+  $$('#ptabs button').forEach((b) => b.onclick = () => { profTab.k = b.dataset.k; $$('#ptabs button').forEach((x) => x.classList.toggle('on', x === b)); show(); });
+  show();
+  $('#copy-link').onclick = async () => {
+    const link = `${location.origin}/${profileUrl(u.username)}`;
+    try { await navigator.clipboard.writeText(link); toast(`<b>Profile link copied.</b><br><span class="small">${esc(link)}</span>`, 'ok'); }
+    catch { toast(esc(link)); }
+  };
+}
+
+// One column per month of the user's history, coloured by how many were accepted.
+function activityStrip(rows) {
+  const first = rows[0].month, last = rows[rows.length - 1].month;
+  const months = [];
+  let [y, m] = first.split('-').map(Number);
+  const [ly, lm] = last.split('-').map(Number);
+  while (y < ly || (y === ly && m <= lm)) { months.push(`${y}-${String(m).padStart(2, '0')}`); m += 1; if (m > 12) { m = 1; y += 1; } }
+  const by = Object.fromEntries(rows.map((r) => [r.month, r]));
+  const max = Math.max(...rows.map((r) => r.n), 1);
+  return `<div class="act">${months.map((mo) => {
+    const r = by[mo] || { n: 0, ac: 0 };
+    const lvl = r.n ? Math.min(4, Math.ceil((4 * r.n) / max)) : 0;
+    return `<div class="act-col" title="${MONTHS[Number(mo.slice(5)) - 1]} ${mo.slice(0, 4)}: ${r.n} submissions, ${r.ac} accepted"><i class="l${lvl}"></i><small>${mo.endsWith('-01') || mo === months[0] ? `${MONTHS[Number(mo.slice(5)) - 1]} ${mo.slice(2, 4)}` : ''}</small></div>`;
+  }).join('')}</div><div class="act-key"><span>Less</span>${[0, 1, 2, 3, 4].map((l) => `<i class="l${l}"></i>`).join('')}<span>More</span></div>`;
+}
+
 // ---------------------------------------------------------------- Query Lab
 let LAB = null; let labSel = 1;
 async function pageQueryLab(v) {
@@ -997,11 +1182,20 @@ async function pageConnection(v) {
 // ---------------------------------------------------------------- router & shell
 const PAGES = {
   overview: pageOverview, problems: pageProblems, submissions: pageSubmissions, contests: pageContests, solvers: pageSolvers,
-  premium: pagePremium, companies: pageCompanies, community: pageCommunity, moderation: pageModeration, plans: pagePlans,
+  premium: pagePremium, companies: pageCompanies, community: pageCommunity, people: pagePeople, moderation: pageModeration, plans: pagePlans,
   integrity: pageIntegrity, querylab: pageQueryLab, connection: pageConnection
 };
 function route() {
   const [path, qs] = (location.hash.replace(/^#\/?/, '') || 'overview').split('?');
+  const [seg, arg] = path.split('/');
+  if (seg === 'u' && arg) {
+    renderNav('people');
+    closeDrawer(); closeModal();
+    $('#sidebar').classList.remove('on'); $('#scrim').classList.remove('on');
+    const view = $('#view'); view.innerHTML = ''; window.scrollTo(0, 0);
+    pageProfile(view, new URLSearchParams(qs || ''), arg);
+    return;
+  }
   const id = PAGES[path] ? path : 'overview';
   renderNav(id);
   const item = NAV.find((n) => n.id === id);
@@ -1075,9 +1269,13 @@ function paletteSearch(term) {
   if (!t) return;
   pal.timer = setTimeout(async () => {
     try {
-      const data = await api(`/api/problems?${new URLSearchParams({ q: term.trim(), size: 8 })}`);
+      const [data, ppl] = await Promise.all([api(`/api/problems?${new URLSearchParams({ q: term.trim(), size: 6 })}`), q('people.directory', { q: term.trim() }).catch(() => ({ rows: [] }))]);
       if ($('#palette-q').value.trim().toLowerCase() !== t) return;
-      pal.items = screens.concat(data.rows.map((r) => ({
+      pal.items = screens.concat(ppl.rows.slice(0, 6).map((u) => ({
+        group: 'People', icon: avatar(u.username, 'xs'),
+        html: `${esc(u.username)} <span class="muted small">${esc(u.country || '')}</span>`, meta: u.contest_rating ? `rating ${fmtNum(u.contest_rating)}` : esc((u.roles || [])[0] || ''),
+        go: () => { location.hash = profileUrl(u.username); }
+      }))).concat(data.rows.map((r) => ({
         group: 'Problems', icon: NAV.find((n) => n.id === 'problems').icon,
         html: `${esc(r.title)} <span class="muted small">#${r.problem_id}</span>`, meta: diff(r.difficulty),
         go: () => { if (!location.hash.startsWith('#/problems')) location.hash = '#/problems'; setTimeout(() => openProblem(r.problem_id), 60); }
@@ -1112,7 +1310,7 @@ function renderMe() {
   if (!u) { el.hidden = true; return; }
   const role = roleOf(u);
   el.hidden = false;
-  el.innerHTML = `<div class="av">${initials(u.username)}</div><a class="me-link" href="#/solvers${(u.roles || []).includes('Solver') ? `?u=${u.user_id}` : ''}" title="${(u.roles || []).includes('Solver') ? 'My progress' : 'Solver progress'}"><b>${esc(u.username)}</b><span>${esc(role[0].toUpperCase() + role.slice(1))}${u.can_edit ? '' : ', read-only'}</span></a>
+  el.innerHTML = `<div class="av">${initials(u.username)}</div><a class="me-link" href="${profileUrl(u.username)}" title="My profile"><b>${esc(u.username)}</b><span>${esc(role[0].toUpperCase() + role.slice(1))}${u.can_edit ? '' : ', read-only'}</span></a>
     <button id="sign-out" title="Sign out" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg></button>`;
   $('#sign-out').onclick = signOut;
 }

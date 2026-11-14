@@ -41,7 +41,9 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 - **Sign-in that uses the database.** Accounts are the rows in `users`; the password is verified with bcrypt against `users.password_hash`; roles come from the role tables. Administrators and problem setters can create, edit and delete problems, solvers get a read-only view, and every sign-in updates `last_login_timestamp` and `session_count`.
 - **Real CRUD, real constraints.** Create, edit and delete problems with their topic and company tags in one transaction. Deleting a problem that still has submissions, contest entries or posts is refused by a foreign key, and the app explains which one.
 - **Nothing is hidden.** A *View SQL* button sits on every screen. The SQL lives on the server; the browser only sends a query name and typed values, which reach PostgreSQL as `$1, $2 …` placeholders.
-- **Jump anywhere.** Press <kbd>Ctrl</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) to open the command palette, then type a screen name, a problem title or a problem id.
+- **Profiles for everyone.** Every user has a public page at `#/u/<username>`, like a LeetCode profile: rank among all solvers, solved-by-difficulty ring, rating history, monthly activity, languages, strongest topics, badges, and tabs for recent submissions, contests, posts, followers and following.
+- **Find people.** The People screen searches all 400 users by name, country or id, filters by role, and sorts by rating, reputation, problems solved, followers or join date.
+- **Jump anywhere.** Press <kbd>Ctrl</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) and type a screen, a problem, or someone's username.
 - **Light and dark, phone and desktop.** It follows your system theme, has a toggle, and works at 390 px wide.
 
 ## Screens
@@ -52,6 +54,7 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 | <img src="docs/screenshots/submissions-dark-1440-row.png" alt="A submission with its failure log and source code"><br>**Submissions & judge** — the code blob by SHA-256 and its one failure log | <img src="docs/screenshots/premium-dark-1440.png" alt="Premium screen with revenue chart and access checker"><br>**Premium & access** — revenue, renewals and a live access checker |
 | <img src="docs/screenshots/solvers-light-1440.png" alt="Solver profile with rating graph and topic accuracy"><br>**Solver progress** — streaks, solved rings, rating graph with `LAG()` | <img src="docs/screenshots/querylab-light-1440.png" alt="Query lab running a Lab 10A query"><br>**Query lab** — run any of the 30 Lab 10A queries |
 | <img src="docs/screenshots/contests-light-1440.png" alt="Contest leaderboard"><br>**Contests** — leaderboards read from pre-calculated ranks | <img src="docs/screenshots/integrity-dark-1440.png" alt="Code integrity screen"><br>**Code integrity** — dedup savings and identical contest code |
+| <img src="docs/screenshots/u_robert_white-light-1440.png" alt="Public profile of robert_white"><br>**Public profile** — rank, solved ring, rating, activity, badges | <img src="docs/screenshots/people-dark-1440.png" alt="People directory"><br>**People** — search, filter by role, sort |
 | <img src="docs/screenshots/login-light-1440.png" alt="Sign-in screen"><br>**Sign in** — any account from `users`, demo password `codepulse` | |
 
 <p align="center">
@@ -72,6 +75,8 @@ and runs all **30 queries from Lab 10A** against the live database. Every card c
 | Solver Progress | 5, 4, 10 | Profile, solved rings, topic accuracy, rating graph (`LAG`), badges, practice suggestions, people to follow |
 | Premium & Access | 6 | Subscriptions, renewal reminders, revenue, payments, gating rules, and a live **access checker** |
 | Companies & Editorials | 7 | Company frequency snapshots (30, 90 and 180-day windows), problems asked, and editorials with code snippets |
+| People | 5, 8 | Search all users, filter by role, sort by rating, reputation, solved or followers |
+| Public profile | 4, 5, 8, 10 | `#/u/<username>`: rank, solved ring, rating graph, activity, languages, badges, submissions, contests, posts, network |
 | Discussions | 8 | Posts with votes, bookmarks and comments; threaded replies; top contributors |
 | Moderation | 9 | Review queue (reports with no review), reasons, moderator workload, full review history |
 | Study Plans & Badges | 10 | Plans with their ordered days, learner progress, badge catalogue, and badges due |

@@ -346,6 +346,102 @@ const Q = {
                             WHERE s.user_id = $1 AND s.problem_id = p.problem_id AND s.verdict = 'AC')
           ORDER BY w.topic_accuracy, p.global_acceptance_rate DESC LIMIT 8`
   },
+  // ---------------------------------------------------------------- People directory + public profiles
+  'people.directory': {
+    srs: 'SRS 5, 8',
+    params: [
+      p('q', 'text'),
+      p('role', 'enum', { values: ['solver', 'setter', 'manager', 'moderator', 'admin'] }),
+      p('sort', 'enum', { values: ['rating', 'reputation', 'solved', 'followers', 'newest'] })
+    ],
+    sql: `WITH ranked AS (
+            SELECT user_id, RANK() OVER (ORDER BY contest_rating DESC) AS global_rank FROM solvers)
+          SELECT u.user_id, u.username, u.country, u.contribution_point, u.registration_date,
+                 s.contest_rating, s.total_problems_solved, s.current_daily_streak, rk.global_rank,
+                 (SELECT COUNT(*) FROM follows f WHERE f.followee_id = u.user_id)::int AS followers,
+                 ARRAY_REMOVE(ARRAY[
+                   CASE WHEN EXISTS (SELECT 1 FROM platform_administrators x WHERE x.user_id = u.user_id) THEN 'Administrator' END,
+                   CASE WHEN EXISTS (SELECT 1 FROM problem_setters x WHERE x.user_id = u.user_id) THEN 'Problem setter' END,
+                   CASE WHEN EXISTS (SELECT 1 FROM contest_managers x WHERE x.user_id = u.user_id) THEN 'Contest manager' END,
+                   CASE WHEN EXISTS (SELECT 1 FROM moderation_leads x WHERE x.user_id = u.user_id) THEN 'Moderation lead' END,
+                   CASE WHEN s.user_id IS NOT NULL THEN 'Solver' END
+                 ], NULL) AS roles
+          FROM users u
+          LEFT JOIN solvers s ON s.user_id = u.user_id
+          LEFT JOIN ranked rk ON rk.user_id = u.user_id
+          WHERE ($1::text IS NULL OR u.username ILIKE '%' || $1 || '%' OR u.country ILIKE $1 || '%' OR u.user_id::text = $1)
+            AND ($2::text IS NULL
+                 OR ($2 = 'solver'    AND s.user_id IS NOT NULL)
+                 OR ($2 = 'setter'    AND EXISTS (SELECT 1 FROM problem_setters x WHERE x.user_id = u.user_id))
+                 OR ($2 = 'manager'   AND EXISTS (SELECT 1 FROM contest_managers x WHERE x.user_id = u.user_id))
+                 OR ($2 = 'moderator' AND EXISTS (SELECT 1 FROM moderation_leads x WHERE x.user_id = u.user_id))
+                 OR ($2 = 'admin'     AND EXISTS (SELECT 1 FROM platform_administrators x WHERE x.user_id = u.user_id)))
+          ORDER BY CASE WHEN $3::text = 'reputation' THEN u.contribution_point END DESC NULLS LAST,
+                   CASE WHEN $3::text = 'solved' THEN s.total_problems_solved END DESC NULLS LAST,
+                   CASE WHEN $3::text = 'followers' THEN (SELECT COUNT(*) FROM follows f WHERE f.followee_id = u.user_id) END DESC NULLS LAST,
+                   CASE WHEN $3::text = 'newest' THEN u.registration_date END DESC NULLS LAST,
+                   s.contest_rating DESC NULLS LAST, u.user_id
+          LIMIT 60`
+  },
+  'users.lookup': {
+    srs: 'SRS 5',
+    params: [p('username', 'text', { required: true })],
+    sql: `SELECT user_id, username FROM users WHERE lower(username) = lower($1)`
+  },
+  'users.standing': {
+    srs: 'SRS 4, 5',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT r.global_rank, r.solvers, ROUND(100.0 * (r.solvers - r.global_rank) / NULLIF(r.solvers, 0), 1) AS beats_pct
+          FROM (SELECT user_id, RANK() OVER (ORDER BY contest_rating DESC)::int AS global_rank,
+                       COUNT(*) OVER ()::int AS solvers FROM solvers) r
+          WHERE r.user_id = $1`
+  },
+  'users.activity': {
+    srs: 'SRS 5',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT to_char(date_trunc('month', submission_timestamp), 'YYYY-MM') AS month, COUNT(*)::int AS n,
+                 COUNT(*) FILTER (WHERE verdict = 'AC')::int AS ac,
+                 COUNT(DISTINCT submission_timestamp::date)::int AS active_days
+          FROM submissions WHERE user_id = $1
+          GROUP BY 1 ORDER BY 1`
+  },
+  'users.languages': {
+    srs: 'SRS 3, 5',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT programming_language AS language, COUNT(*)::int AS submissions,
+                 COUNT(DISTINCT problem_id) FILTER (WHERE verdict = 'AC')::int AS solved
+          FROM submissions WHERE user_id = $1
+          GROUP BY 1 ORDER BY submissions DESC`
+  },
+  'users.contests': {
+    srs: 'SRS 4',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT c.contest_id, c.title, c.contest_type::text AS contest_type, c.start_time,
+                 pa.current_rank, pa.problems_solved, pa.total_score, pa.disqualification_flag,
+                 (SELECT COUNT(*) FROM participations x WHERE x.contest_id = c.contest_id)::int AS players,
+                 rh.new_rating
+          FROM participations pa
+          JOIN contests c ON c.contest_id = pa.contest_id
+          LEFT JOIN rating_history rh ON rh.user_id = pa.user_id AND rh.contest_id = pa.contest_id
+          WHERE pa.user_id = $1 ORDER BY c.start_time DESC LIMIT 12`
+  },
+  'users.posts': {
+    srs: 'SRS 8',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT p.post_id, p.title, pr.title AS problem, p.creation_timestamp, p.post_status::text AS status,
+                 (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.post_id AND r.action_type = 'Upvote')::int AS upvotes,
+                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.post_id)::int AS comments
+          FROM posts p JOIN problems pr ON pr.problem_id = p.problem_id
+          WHERE p.user_id = $1 ORDER BY p.creation_timestamp DESC LIMIT 8`
+  },
+  'users.network': {
+    srs: 'SRS 8',
+    params: [p('user_id', 'int', { required: true })],
+    sql: `SELECT 'follower' AS side, u.user_id, u.username, u.country FROM follows f JOIN users u ON u.user_id = f.follower_id WHERE f.followee_id = $1
+          UNION ALL
+          SELECT 'following', u.user_id, u.username, u.country FROM follows f JOIN users u ON u.user_id = f.followee_id WHERE f.follower_id = $1
+          ORDER BY 1, 3`
+  },
   'users.streak_leaders': {
     srs: 'SRS 5',
     sql: `SELECT u.user_id, u.username, s.current_daily_streak, s.total_problems_solved, s.contest_rating
