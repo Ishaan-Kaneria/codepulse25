@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const express = require('express');
 const { run } = require('../db');
+const { AS_OF } = require('../queries/srs');
 
 const router = express.Router();
 const SECRET = process.env.AUTH_SECRET || 'codepulse-local-dev-secret';
@@ -42,14 +43,49 @@ function requireUser(req, res, next) {
   next();
 }
 
+// Middleware: attach the signed-in user if a valid token is present (never rejects).
+function attachUser(req, res, next) {
+  const token = (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  req.user = verify(token) || null;
+  next();
+}
+
+// Read a user's roles and Premium status straight from the role tables and subscriptions.
+// "Premium" means the latest subscription is a Premium plan that is Active or Renewed and has not ended (as of the data date).
+const ROLE_SQL = `
+  SELECT EXISTS (SELECT 1 FROM platform_administrators WHERE user_id = $1) AS admin,
+         EXISTS (SELECT 1 FROM problem_setters        WHERE user_id = $1) AS setter,
+         EXISTS (SELECT 1 FROM contest_managers       WHERE user_id = $1) AS manager,
+         EXISTS (SELECT 1 FROM moderation_leads       WHERE user_id = $1) AS moderator,
+         EXISTS (SELECT 1 FROM solvers                WHERE user_id = $1) AS solver,
+         COALESCE((SELECT s.subscription_tier = 'Premium' AND s.payment_status IN ('Active', 'Renewed')
+                          AND (s.end_date IS NULL OR s.end_date >= DATE '${AS_OF}')
+                   FROM subscriptions s WHERE s.user_id = $1
+                   ORDER BY s.end_date DESC NULLS FIRST, s.subscription_id DESC LIMIT 1), FALSE) AS premium`;
+async function rolesOf(uid) {
+  if (!uid) return { admin: false, setter: false, manager: false, moderator: false, solver: false, premium: false };
+  return (await run(ROLE_SQL, [uid])).rows[0];
+}
+
+// feature_gating_rules.minimum_access_level decides who may open gated content:
+//   Free -> everyone; Registered -> any signed-in user; Premium_Only -> active Premium,
+//   plus administrators and the content's own setter (they need it to do their job).
+function contentAccess(user, roles, level, setterId) {
+  if (!level || level === 'Free') return { allowed: true };
+  if (!user) return { allowed: false, needs: level, reason: 'Sign in to open this.' };
+  if (level === 'Registered') return { allowed: true };
+  if (roles.admin) return { allowed: true, via: 'administrator' };
+  if (setterId && setterId === user.uid) return { allowed: true, via: 'setter' };
+  if (roles.premium) return { allowed: true, via: 'premium' };
+  return { allowed: false, needs: level, reason: 'This needs an active Premium subscription.' };
+}
+
 // Middleware: only administrators and problem setters may create, edit or delete problems.
 // The check reads the role tables on every request, so a role change in the database applies at once.
 async function requireEditor(req, res, next) {
   try {
-    const { rows } = await run(
-      `SELECT EXISTS (SELECT 1 FROM platform_administrators WHERE user_id = $1)
-           OR EXISTS (SELECT 1 FROM problem_setters WHERE user_id = $1) AS ok`, [req.user.uid]);
-    if (!rows[0].ok) return res.status(403).json({ error: 'Only administrators and problem setters can change problems. Your account is read-only here.' });
+    req.roles = await rolesOf(req.user.uid);
+    if (!req.roles.admin && !req.roles.setter) return res.status(403).json({ error: 'Only administrators and problem setters can change problems. Your account is read-only here.' });
     next();
   } catch (err) { next(err); }
 }
@@ -58,6 +94,12 @@ const PROFILE_SQL = `
   SELECT u.user_id, u.username, u.country, u.contribution_point,
          (EXISTS (SELECT 1 FROM platform_administrators x WHERE x.user_id = u.user_id)
           OR EXISTS (SELECT 1 FROM problem_setters x WHERE x.user_id = u.user_id)) AS can_edit,
+         EXISTS (SELECT 1 FROM platform_administrators x WHERE x.user_id = u.user_id) AS is_admin,
+         EXISTS (SELECT 1 FROM moderation_leads x WHERE x.user_id = u.user_id) AS is_moderator,
+         COALESCE((SELECT s.subscription_tier = 'Premium' AND s.payment_status IN ('Active', 'Renewed')
+                          AND (s.end_date IS NULL OR s.end_date >= DATE '${AS_OF}')
+                   FROM subscriptions s WHERE s.user_id = u.user_id
+                   ORDER BY s.end_date DESC NULLS FIRST, s.subscription_id DESC LIMIT 1), FALSE) AS premium,
          ARRAY_REMOVE(ARRAY[
            CASE WHEN EXISTS (SELECT 1 FROM platform_administrators x WHERE x.user_id = u.user_id) THEN 'Administrator' END,
            CASE WHEN EXISTS (SELECT 1 FROM problem_setters x WHERE x.user_id = u.user_id) THEN 'Problem setter' END,
@@ -99,3 +141,6 @@ router.get('/me', requireUser, async (req, res, next) => {
 module.exports = router;
 module.exports.requireUser = requireUser;
 module.exports.requireEditor = requireEditor;
+module.exports.attachUser = attachUser;
+module.exports.rolesOf = rolesOf;
+module.exports.contentAccess = contentAccess;

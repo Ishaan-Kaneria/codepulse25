@@ -4,6 +4,7 @@
 const express = require('express');
 const { run, withTransaction } = require('../db');
 const { DIFFS } = require('../queries/srs');
+const { rolesOf, contentAccess } = require('./auth');
 
 const router = express.Router();
 
@@ -83,7 +84,7 @@ router.get('/', async (req, res, next) => {
     const page = Math.max(toInt(req.query.page) || 1, 1);
 
     const sql = `
-      SELECT p.problem_id, p.title, p.difficulty_level::text AS difficulty, p.global_acceptance_rate,
+      SELECT p.problem_id, p.title, p.setter_id, p.difficulty_level::text AS difficulty, p.global_acceptance_rate,
              p.total_attempts, p.time_limit_ms, p.memory_limit_mb, p.creation_date,
              r.minimum_access_level::text AS access,
              (SELECT STRING_AGG(t.topic_name, ', ' ORDER BY t.topic_name)
@@ -129,17 +130,35 @@ router.get('/:id', async (req, res, next) => {
            FROM submissions WHERE problem_id = $1 GROUP BY programming_language ORDER BY submissions DESC`, [id])
     ]);
     if (!prob.rowCount) return res.status(404).json({ error: `Problem ${id} was not found.` });
+    const problem = prob.rows[0];
+    // Premium gating from feature_gating_rules: hide the statement, samples, tests and editorial when locked.
+    const access = contentAccess(req.user, await rolesOf(req.user?.uid), problem.access, problem.setter_id);
+    if (!access.allowed) {
+      for (const k of ['full_description', 'constraint_text', 'sample_input', 'sample_output']) problem[k] = null;
+      return res.json({ problem, locked: { needs: access.needs, reason: access.reason }, topics: topics.rows, companies: companies.rows,
+                        tests: [], verdicts: stats.rows, editorials: [], languages: langs.rows });
+    }
     res.json({
-      problem: prob.rows[0], topics: topics.rows, companies: companies.rows, tests: tests.rows,
+      problem, access, topics: topics.rows, companies: companies.rows, tests: tests.rows,
       verdicts: stats.rows, editorials: editorial.rows, languages: langs.rows
     });
   } catch (err) { next(err); }
 });
 
 // CREATE
+// A problem setter who is not an administrator may only act on problems they set (problems.setter_id).
+async function ownsProblem(req, id) {
+  if (req.roles?.admin) return true;
+  const { rows } = await run('SELECT setter_id FROM problems WHERE problem_id = $1', [id]);
+  return !rows[0] || rows[0].setter_id === req.user.uid;   // a missing problem falls through to the 404 below
+}
+
 router.post('/', async (req, res, next) => {
   const { data, errors } = validate(req.body || {});
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  if (!req.roles.admin && data.setter_id !== req.user.uid) {
+    return res.status(403).json({ error: 'As a problem setter you can only create problems under your own name. Choose yourself as the setter.' });
+  }
   try {
     const row = await withTransaction(async (client) => {
       // problem_id has no sequence in the schema, so take the next free number inside the transaction.
@@ -168,6 +187,8 @@ router.put('/:id', async (req, res, next) => {
   const { data, errors } = validate(req.body || {});
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
   try {
+    if (!(await ownsProblem(req, id))) return res.status(403).json({ error: 'You can only edit problems you set. Administrators can edit any problem.' });
+    if (!req.roles.admin && data.setter_id !== req.user.uid) return res.status(403).json({ error: 'You cannot hand your problem to another setter. Ask an administrator.' });
     const result = await withTransaction(async (client) => {
       const upd = await client.query(
         `UPDATE problems
@@ -190,6 +211,7 @@ router.delete('/:id', async (req, res, next) => {
   const id = toInt(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Problem id must be a number.' });
   try {
+    if (!(await ownsProblem(req, id))) return res.status(403).json({ error: 'You can only delete problems you set. Administrators can delete any problem.' });
     const result = await run('DELETE FROM problems WHERE problem_id = $1', [id]);
     if (!result.rowCount) return res.status(404).json({ error: `Problem ${id} was not found.` });
     console.log(`DELETE FROM problems WHERE problem_id = ${id} -> rowCount ${result.rowCount}`);

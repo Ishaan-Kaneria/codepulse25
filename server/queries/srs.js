@@ -427,12 +427,13 @@ const Q = {
   },
   'users.posts': {
     srs: 'SRS 8',
-    params: [p('user_id', 'int', { required: true })],
+    params: [p('user_id', 'int', { required: true }), p('viewer', 'int', { server: 'viewer' }), p('staff', 'bool', { server: 'staff' })],
     sql: `SELECT p.post_id, p.title, pr.title AS problem, p.creation_timestamp, p.post_status::text AS status,
                  (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.post_id AND r.action_type = 'Upvote')::int AS upvotes,
                  (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.post_id)::int AS comments
           FROM posts p JOIN problems pr ON pr.problem_id = p.problem_id
-          WHERE p.user_id = $1 ORDER BY p.creation_timestamp DESC LIMIT 8`
+          WHERE p.user_id = $1 AND ($3::bool OR p.post_status NOT IN ('Hidden', 'Removed') OR p.user_id = $2::int)
+          ORDER BY p.creation_timestamp DESC LIMIT 8`
   },
   'users.network': {
     srs: 'SRS 8',
@@ -549,6 +550,7 @@ const Q = {
   },
   'editorials.detail': {
     srs: 'SRS 7',
+    gate: 'editorial',
     params: [p('editorial_id', 'int', { required: true })],
     sql: `SELECT e.editorial_id, p.title, e.solution_text, e.time_complexity, e.space_complexity,
                  sn.snippet_no, sn.programming_language, sn.code_snippet
@@ -560,7 +562,7 @@ const Q = {
   // ---------------------------------------------------------------- SRS 8: community
   'community.posts': {
     srs: 'SRS 8',
-    params: [p('sort', 'enum', { values: ['top', 'new', 'discussed'] }), p('q', 'text')],
+    params: [p('sort', 'enum', { values: ['top', 'new', 'discussed'] }), p('q', 'text'), p('viewer', 'int', { server: 'viewer' }), p('staff', 'bool', { server: 'staff' })],
     sql: `SELECT p.post_id, p.title, u.username AS author, pr.title AS problem, p.programming_language_tag AS language,
                  p.post_status::text AS status, p.creation_timestamp,
                  COALESCE(r.up, 0)::int AS upvotes, COALESCE(r.down, 0)::int AS downvotes,
@@ -575,6 +577,7 @@ const Q = {
                      FROM reactions GROUP BY post_id) r ON r.post_id = p.post_id
           LEFT JOIN (SELECT post_id, COUNT(*) AS n FROM comments GROUP BY post_id) c ON c.post_id = p.post_id
           WHERE ($2::text IS NULL OR p.title ILIKE '%' || $2 || '%' OR pr.title ILIKE '%' || $2 || '%')
+            AND ($4::bool OR p.post_status NOT IN ('Hidden', 'Removed') OR p.user_id = $3::int)
           ORDER BY CASE WHEN $1::text = 'new' THEN EXTRACT(EPOCH FROM p.creation_timestamp) END DESC NULLS LAST,
                    CASE WHEN $1::text = 'discussed' THEN COALESCE(c.n, 0) END DESC NULLS LAST,
                    COALESCE(r.up, 0) - COALESCE(r.down, 0) DESC, p.post_id
@@ -582,21 +585,25 @@ const Q = {
   },
   'community.post': {
     srs: 'SRS 8',
-    params: [p('post_id', 'int', { required: true })],
+    params: [p('post_id', 'int', { required: true }), p('viewer', 'int', { server: 'viewer' }), p('staff', 'bool', { server: 'staff' })],
     sql: `SELECT p.post_id, p.title, p.body_text, p.code_snippet, p.programming_language_tag AS language,
                  p.time_complexity_analysis, p.edge_case_explanation, p.post_status::text AS status,
                  p.creation_timestamp, u.username AS author, pr.title AS problem
           FROM posts p JOIN users u ON u.user_id = p.user_id
           LEFT JOIN problems pr ON pr.problem_id = p.problem_id
-          WHERE p.post_id = $1`
+          WHERE p.post_id = $1
+            AND ($3::bool OR p.post_status NOT IN ('Hidden', 'Removed') OR p.user_id = $2::int)`
   },
   'community.comments': {
     srs: 'SRS 8',
-    params: [p('post_id', 'int', { required: true })],
+    params: [p('post_id', 'int', { required: true }), p('viewer', 'int', { server: 'viewer' }), p('staff', 'bool', { server: 'staff' })],
     sql: `SELECT c.comment_id, cr.parent_comment_id, u.username, c.comment_body, c.comment_timestamp
           FROM comments c JOIN users u ON u.user_id = c.user_id
           LEFT JOIN comment_replies cr ON cr.comment_id = c.comment_id
-          WHERE c.post_id = $1 ORDER BY c.comment_timestamp`
+          JOIN posts p ON p.post_id = c.post_id
+          WHERE c.post_id = $1
+            AND ($3::bool OR p.post_status NOT IN ('Hidden', 'Removed') OR p.user_id = $2::int)
+          ORDER BY c.comment_timestamp`
   },
   'community.contributors': {
     srs: 'SRS 8',
@@ -621,6 +628,8 @@ const Q = {
   // ---------------------------------------------------------------- SRS 9: moderation
   'moderation.queue': {
     srs: 'SRS 9',
+    roles: ['moderator', 'admin'],
+    denied: 'Only moderation leads and administrators can open moderation data.',
     sql: `SELECT fr.report_id, fr.reason::text AS reason, fr.report_timestamp, fr.extra_note,
                  ru.username AS reporter, p.post_id, p.title AS post_title, pa.username AS post_author,
                  p.post_status::text AS post_status,
@@ -635,6 +644,8 @@ const Q = {
   },
   'moderation.history': {
     srs: 'SRS 9',
+    roles: ['moderator', 'admin'],
+    denied: 'Only moderation leads and administrators can open moderation data.',
     sql: `SELECT mr.review_id, fr.report_id, fr.reason::text AS reason, p.title AS post_title,
                  mu.username AS moderator, mr.action_taken, mr.final_decision::text AS decision,
                  fr.report_timestamp, mr.review_timestamp,
@@ -647,6 +658,8 @@ const Q = {
   },
   'moderation.reasons': {
     srs: 'SRS 9',
+    roles: ['moderator', 'admin'],
+    denied: 'Only moderation leads and administrators can open moderation data.',
     sql: `SELECT fr.reason::text AS reason, COUNT(DISTINCT fr.report_id)::int AS reports,
                  COUNT(mr.review_id) FILTER (WHERE mr.final_decision = 'Removed')::int AS removed,
                  COUNT(mr.review_id) FILTER (WHERE mr.final_decision = 'Approved')::int AS kept
@@ -655,6 +668,8 @@ const Q = {
   },
   'moderation.workload': {
     srs: 'SRS 9',
+    roles: ['moderator', 'admin'],
+    denied: 'Only moderation leads and administrators can open moderation data.',
     sql: `SELECT u.username AS moderator, COUNT(*)::int AS reviews,
                  ROUND(AVG(EXTRACT(EPOCH FROM (mr.review_timestamp - fr.report_timestamp)) / 3600)::numeric, 1) AS avg_hours,
                  COUNT(*) FILTER (WHERE mr.final_decision = 'Removed')::int AS removed

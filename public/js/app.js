@@ -275,7 +275,7 @@ async function loadProblems() {
     const data = await api(`/api/problems?${qs}`);
     el.innerHTML = table(data.rows, [
       { label: '#', num: true, render: (r) => `<span class="muted">${r.problem_id}</span>` },
-      { label: 'Title', render: (r) => `<span class="strong">${esc(r.title)}</span>` },
+      { label: 'Title', render: (r) => `<span class="strong">${esc(r.title)}</span>${willLock(r.access, r.setter_id) ? ` <span class="lock-mini" title="Needs Premium">${icon.lock}</span>` : ''}` },
       { label: 'Difficulty', render: (r) => diff(r.difficulty) },
       { label: 'Topics', wrap: true, render: (r) => `<span class="small muted">${esc(r.topics || '—')}</span>` },
       { label: 'Acceptance', num: true, render: (r) => pct(r.global_acceptance_rate) },
@@ -302,11 +302,14 @@ async function openProblem(id) {
     body.innerHTML = `
       <div class="pill-row">${diff(p.difficulty_level)} ${level(p.access)} <span class="chip ghost">setter: ${esc(p.setter)}</span>
         <span class="chip ghost">${fmtNum(p.time_limit_ms)} ms · ${fmtNum(p.memory_limit_mb)} MB</span></div>
-      ${canEdit() ? `<div style="display:flex;gap:8px">
+      ${canChange(p) ? `<div style="display:flex;gap:8px">
         <button class="btn primary" id="d-edit">${icon.edit} Edit</button>
         <button class="btn danger" id="d-del">${icon.trash} Delete</button>
-      </div>` : '<div class="note-box small">You are signed in with a read-only account. Sign in as an administrator or problem setter, such as <b>parth_modi</b>, to edit or delete problems.</div>'}
-      <div><h4>Description</h4><p style="margin:0;white-space:pre-wrap">${esc(p.full_description)}</p></div>
+      </div>` : canEdit()
+        ? `<div class="note-box small">Only <b>${esc(p.setter)}</b>, who set this problem, or an administrator can edit or delete it.</div>`
+        : '<div class="note-box small">You are signed in with a read-only account. Administrators and problem setters can edit problems.</div>'}
+      ${d.locked ? lockCard(d.locked.needs, d.locked.reason) : ''}
+      ${d.locked ? '' : `<div><h4>Description</h4><p style="margin:0;white-space:pre-wrap">${esc(p.full_description)}</p></div>`}
       ${p.constraint_text ? `<div><h4>Constraints</h4><div class="code" style="white-space:pre-wrap">${esc(p.constraint_text)}</div></div>` : ''}
       ${p.sample_input || p.sample_output ? `<div class="grid g2"><div><h4>Sample input</h4><div class="code">${esc(p.sample_input || '')}</div></div><div><h4>Sample output</h4><div class="code">${esc(p.sample_output || '')}</div></div></div>` : ''}
       <div class="grid g2">
@@ -315,10 +318,10 @@ async function openProblem(id) {
       </div>
       <div><h4>Judging · ${fmtNum(total)} submissions · SRS 3</h4>${total ? donut(d.verdicts.map((r) => ({ label: VERDICT_NAMES[r.verdict], value: r.total, color: VERDICT_COLORS[r.verdict] })), pct(p.global_acceptance_rate), 'acceptance') : '<span class="muted">No submissions yet.</span>'}</div>
       ${d.languages.length ? `<div><h4>By language</h4>${table(d.languages, [{ label: 'Language', key: 'language' }, { label: 'Submissions', num: true, key: 'submissions' }, { label: 'Best AC runtime', num: true, render: (r) => (r.best_runtime_ms === null ? '—' : `${r.best_runtime_ms} ms`) }])}</div>` : ''}
-      <div><h4>Hidden test cases · SRS 2</h4>${table(d.tests, [
+      ${d.locked ? '' : `<div><h4>Hidden test cases · SRS 2</h4>${table(d.tests, [
         { label: 'No.', num: true, key: 'test_case_no' }, { label: 'File URL', render: (r) => `<span class="mono small">${esc(r.file_url)}</span>` },
         { label: 'Sample', render: (r) => (r.sample_flag ? '<span class="chip teal">sample</span>' : '<span class="muted">hidden</span>') }, { label: 'Weight', num: true, key: 'weight' }
-      ], { empty: 'No test cases stored for this problem.' })}</div>
+      ], { empty: 'No test cases stored for this problem.' })}</div>`}
       ${d.editorials.length ? `<div><h4>Editorial</h4>${table(d.editorials, [{ label: 'Time', key: 'time_complexity' }, { label: 'Space', key: 'space_complexity' }, { label: 'Status', render: (r) => status(r.status) }, { label: 'Views', num: true, render: (r) => fmtNum(r.view_count) }])}</div>` : ''}`;
     if ($('#d-edit')) $('#d-edit').onclick = () => problemForm(d);
     if ($('#d-del')) $('#d-del').onclick = () => confirmDelete(p);
@@ -336,7 +339,7 @@ async function problemForm(existing) {
     <form class="form" id="pform" novalidate>
       <label class="full">Title<input class="input" name="title" maxlength="150" required value="${esc(p.title || '')}" placeholder="e.g. Longest Balanced Substring"></label>
       <label>Difficulty<select class="input" name="difficulty_level">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${p.difficulty_level === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label>Problem setter<select class="input" name="setter_id">${meta.setters.map((s) => `<option value="${s.user_id}" ${p.setter_id === s.user_id ? 'selected' : ''}>${esc(s.username)} (#${s.user_id})</option>`).join('')}</select></label>
+      <label>Problem setter<select class="input" name="setter_id">${meta.setters.filter((s) => auth.user?.is_admin || s.user_id === auth.user?.user_id).map((s) => `<option value="${s.user_id}" ${p.setter_id === s.user_id ? 'selected' : ''}>${esc(s.username)} (#${s.user_id})</option>`).join('')}</select></label>
       <label>Time limit (ms) <span class="hint">100 to 10000</span><input class="input" type="number" name="time_limit_ms" min="100" max="10000" value="${esc(p.time_limit_ms)}"></label>
       <label>Memory limit (MB) <span class="hint">16 to 1024</span><input class="input" type="number" name="memory_limit_mb" min="16" max="1024" value="${esc(p.memory_limit_mb)}"></label>
       <label class="full">Access rule (feature_gating_rules)<select class="input" name="rule_id"><option value="">No rule (open to everyone)</option>${meta.rules.map((r) => `<option value="${r.rule_id}" ${p.rule_id === r.rule_id ? 'selected' : ''}>${esc(r.feature_name)} · ${esc(r.level)}</option>`).join('')}</select></label>
@@ -731,7 +734,7 @@ async function openEditorial(id) {
     body.innerHTML = `<div class="pill-row"><span class="chip teal">Time ${esc(e.time_complexity)}</span><span class="chip">Space ${esc(e.space_complexity)}</span></div>
       <div><h4>Solution</h4><p style="margin:0;white-space:pre-wrap">${esc(e.solution_text)}</p></div>
       ${rows.filter((r) => r.snippet_no).map((r) => `<div><h4>Snippet ${r.snippet_no} · ${esc(r.programming_language)}</h4><div class="code">${esc(r.code_snippet)}</div></div>`).join('')}`;
-  } catch (err) { body.innerHTML = errorBox(err); }
+  } catch (err) { body.innerHTML = err.data?.locked ? lockCard(err.data.locked.needs, err.message) : errorBox(err); }
 }
 
 // ---------------------------------------------------------------- Community
@@ -771,6 +774,7 @@ async function openPost(id) {
   try {
     const [pp, cc] = await Promise.all([q('community.post', { post_id: id }), q('community.comments', { post_id: id })]);
     const p = pp.rows[0];
+    if (!p) { $('#drawer-title').textContent = 'Post not available'; body.innerHTML = '<div class="note-box">This post was hidden or removed by a moderator. Only moderation leads, administrators and its author can open it.</div>'; return; }
     const byParent = {};
     cc.rows.forEach((c) => { (byParent[c.parent_comment_id ?? 'root'] ||= []).push(c); });
     const render = (c) => `<div class="cmt"><span class="who">${esc(c.username)}</span><span class="when">${fmtDate(c.comment_timestamp, true)}</span><p>${esc(c.comment_body)}</p>
@@ -787,11 +791,20 @@ async function openPost(id) {
 
 // ---------------------------------------------------------------- Moderation
 async function pageModeration(v) {
+  const u = auth.user;
+  if (!(u?.is_moderator || u?.is_admin)) {
+    v.innerHTML = head({ title: 'Moderation', srs: ['SRS 9'], desc: 'Reports from users, and the reviews that close them.' }) +
+      `<section class="card empty-state"><div class="lock-ic big">${icon.lock}</div><h2>Moderation leads and administrators only</h2>
+        <p class="muted" style="max-width:56ch">Your account (${esc(roleOf(u))}) is not in <code>moderation_leads</code> or <code>platform_administrators</code>, so the review queue stays closed.
+        Sign in as a moderation lead such as <b>pallavi_das</b> to review reports.</p></section>`;
+    return;
+  }
   v.innerHTML = head({
     title: 'Moderation', srs: ['SRS 9'],
     desc: 'Any user can report a post. Moderation leads close reports with reviews, and no review is ever deleted, so the full history stays.',
     sql: ['moderation.queue', 'moderation.history', 'moderation.reasons', 'moderation.workload']
-  }) + `<div class="grid g4 mb" id="md-kpi"></div>
+  }) + (u.is_moderator ? '' : `<div class="note-box mb">You can see the queue as an administrator. Only moderation leads can sign a review, because <code>moderator_reviews.moderator_id</code> references <code>moderation_leads</code>.</div>`) +
+  `<div class="grid g4 mb" id="md-kpi"></div>
     <div class="grid g-2-1 mb"><div id="md-queue"></div><div id="md-reasons"></div></div>
     <div class="grid g-2-1"><div id="md-hist"></div><div id="md-work"></div></div>`;
   fill('#md-queue', async (el) => {
@@ -807,8 +820,8 @@ async function pageModeration(v) {
       { label: 'Reason', render: (r) => `<span class="chip">${esc(r.reason.replace('_', ' '))}</span>` },
       { label: 'Post', wrap: true, render: (r) => `<span class="strong">${esc(r.post_title)}</span><div class="small muted">by ${esc(r.post_author)} · reported by ${esc(r.reporter)}</div>` },
       { label: 'Reported', render: (r) => fmtDate(r.report_timestamp, true) }, { label: 'Post status', render: (r) => status(r.post_status) }
-    ], { onRow: true, empty: 'Queue is empty.' }), { flush: true, sub: 'LEFT JOIN … WHERE review IS NULL' });
-    bindRows(el, rows, (r) => openPost(r.post_id));
+    ], { onRow: true, empty: 'Queue is empty.' }), { flush: true, sub: u.is_moderator ? 'click a report to review it' : 'LEFT JOIN … WHERE review IS NULL' });
+    bindRows(el, rows, (r) => (u.is_moderator ? reviewForm(r, () => pageModeration(v)) : openPost(r.post_id)));
     $('#md-hist').innerHTML = card('Review history', `<div class="t-scroll">${table(hist.rows, [
       { label: 'Report', render: (r) => `#${r.report_id}` }, { label: 'Moderator', key: 'moderator' },
       { label: 'Action', wrap: true, key: 'action_taken' }, { label: 'Decision', render: (r) => status(r.decision) },
@@ -827,6 +840,32 @@ async function pageModeration(v) {
       { label: 'Avg h', num: true, key: 'avg_hours' }, { label: 'Removed', num: true, key: 'removed' }
     ]), { flush: true });
   });
+}
+
+// A moderation lead closes a report: INSERT INTO moderator_reviews + UPDATE posts.post_status, in one transaction.
+function reviewForm(r, done) {
+  const body = openModal(`Review report #${r.report_id}`, `
+    <div class="pill-row" style="margin-top:0"><span class="chip">${esc(r.reason.replace('_', ' '))}</span>${status(r.post_status)}<span class="chip ghost">reported by ${esc(r.reporter)}</span></div>
+    <p><b>${esc(r.post_title)}</b> <span class="muted">by ${esc(r.post_author)}</span>${r.extra_note ? `<br><span class="small muted">Note from reporter: ${esc(r.extra_note)}</span>` : ''}</p>
+    <form class="form" id="rv-form" novalidate>
+      <label class="full">Decision (decision_t)<div class="seg decision" id="rv-dec">${['Approved', 'Hidden', 'Removed', 'Locked'].map((d) => `<button type="button" data-d="${d}">${d}</button>`).join('')}</div></label>
+      <label class="full">Action taken <span class="hint">up to 60 characters</span><input class="input" id="rv-act" maxlength="60" placeholder="e.g. Removed spam link and warned author"></label>
+      <label class="full">Note <span class="hint">optional</span><input class="input" id="rv-note" maxlength="255"></label>
+      <div class="form-error" id="rv-err"></div>
+    </form>
+    <div class="form-actions"><button class="btn" type="button" id="rv-open">Read the post</button><span style="flex:1"></span><button class="btn" data-close>Cancel</button><button class="btn primary" id="rv-go">${icon.check} Close report</button></div>`);
+  let decision = '';
+  $$('#rv-dec button', body).forEach((b) => b.onclick = () => { decision = b.dataset.d; $$('#rv-dec button', body).forEach((x) => x.classList.toggle('on', x === b)); });
+  $('#rv-open', body).onclick = () => { closeModal(); openPost(r.post_id); };
+  $('#rv-go', body).onclick = async () => {
+    const btn = $('#rv-go', body); btn.disabled = true;
+    try {
+      const res = await api('/api/moderation/reviews', { method: 'POST', body: { report_id: r.report_id, decision, action_taken: $('#rv-act', body).value, note: $('#rv-note', body).value } });
+      closeModal();
+      toast(`<b>${esc(res.message)}</b><br><span class="small">moderator_reviews rowCount ${res.rowCount}, posts updated ${res.postsUpdated}</span>`, 'ok');
+      done();
+    } catch (e) { $('#rv-err', body).innerHTML = `<div class="note-box warn">${esc(e.message)}</div>`; btn.disabled = false; }
+  };
 }
 
 // ---------------------------------------------------------------- Study plans & badges
@@ -1305,6 +1344,17 @@ document.addEventListener('keydown', (e) => {
 const ROLE_ORDER = ['Administrator', 'Problem setter', 'Contest manager', 'Moderation lead', 'Solver'];
 function roleOf(u) { return ((u?.roles || []).slice().sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b))[0] || 'member').toLowerCase(); }
 function canEdit() { return Boolean(auth.user?.can_edit); }
+// Mirrors the server: administrators may change any problem; a problem setter only their own.
+function canChange(problem) { return Boolean(auth.user?.is_admin || (auth.user?.can_edit && problem?.setter_id === auth.user.user_id)); }
+// Mirrors feature_gating_rules on the server, so the list can show which problems will open locked.
+function willLock(access, setterId) {
+  if (access !== 'Premium_Only') return false;
+  const u = auth.user; return !(u?.is_admin || u?.premium || (setterId && setterId === u?.user_id));
+}
+const lockCard = (needs, reason) => `<div class="lock-card"><div class="lock-ic">${icon.lock}</div>
+  <div><b>${needs === 'Premium_Only' ? 'Premium content' : 'Locked'}</b><p>${esc(reason || 'You do not have access to this.')}</p>
+  <p class="small muted">Rule from <code>feature_gating_rules</code>: minimum access level <b>${esc(String(needs).replace('_', ' '))}</b>. Your plan comes from <code>subscriptions</code>.</p>
+  <a class="btn sm" href="#/premium">${icon.arrow} See Premium plans</a></div></div>`;
 function renderMe() {
   const u = auth.user; const el = $('#me');
   if (!u) { el.hidden = true; return; }

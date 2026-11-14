@@ -103,6 +103,20 @@ individually salted bcrypt hash of the demo password for each user. The server t
 4. records the sign-in with `UPDATE users SET last_login_timestamp = NOW(), session_count = session_count + 1 WHERE user_id = $1`,
 5. returns an HMAC-signed token (`AUTH_SECRET`). `POST`, `PUT` and `DELETE` on `/api/problems` need that token **and** an administrator or problem-setter role, checked against the role tables on every request.
 
+## Roles and rules
+
+The role tables and keys in `01_create_tables.sql` decide who may do what, and the API enforces the same rules (the browser only hides buttons; the server says no):
+
+| Rule in the schema | How the app follows it |
+|---|---|
+| `problems.setter_id → problem_setters` | Only administrators and problem setters can create, edit or delete problems. A setter creates problems under their own name and changes only their own; administrators can change any. |
+| `problems.rule_id`, `editorials.rule_id → feature_gating_rules` | `Premium_Only` problems and editorials open only for users whose latest `subscriptions` row is an active Premium plan, plus administrators and the content's own setter. Everyone else sees a lock; the statement, samples, tests and editorial are not even sent. |
+| `moderator_reviews.moderator_id → moderation_leads` | Only moderation leads can close a report. The review is inserted and the post takes the decision as its `post_status`, in one transaction. Administrators can read the queue but not sign reviews. |
+| `post_status` = `Hidden` / `Removed` | Those posts (and their comments) are visible only to moderation leads, administrators and the author. |
+| `submissions`, `participations`, `enrolments → solvers`; `contests.manager_id → contest_managers` | Enforced by PostgreSQL; the app has no screens that write these rows. |
+
+Who the viewer is comes from the signed token on the server, never from the URL, so `?staff=true` in a request changes nothing.
+
 ## How it fits together
 
 ```mermaid

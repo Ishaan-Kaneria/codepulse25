@@ -6,11 +6,13 @@ const { Q, AS_OF } = require('./queries/srs');
 const LAB10A = require('./queries/lab10a');
 const problems = require('./routes/problems');
 const auth = require('./routes/auth');
+const moderation = require('./routes/moderation');
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
 
 const api = express.Router();
+api.use(auth.attachUser);   // req.user is set when a valid token is sent; nothing is rejected here
 
 // Connection check: SELECT version()
 api.get('/health', async (req, res, next) => {
@@ -24,16 +26,21 @@ api.get('/health', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Sign-in (demo)
+// Sign-in
 api.use('/auth', auth);
+
+// Moderation reviews (moderation leads only)
+api.use('/moderation', auth.requireUser, moderation);
 
 // Main table CRUD (writes need a signed-in administrator or problem setter)
 api.use('/problems', (req, res, next) => (req.method === 'GET' ? next() : auth.requireUser(req, res, () => auth.requireEditor(req, res, next))), problems);
 
 // Named read-only queries for every SRS screen: GET /api/q/<key>?param=value
-function readParams(def, query) {
+function readParams(def, query, ctx = {}) {
   const values = [];
   for (const prm of def.params || []) {
+    // Values marked "server" (who is asking, and their role) come from the verified token, never from the URL.
+    if (prm.server) { values.push(ctx[prm.server] ?? null); continue; }
     let raw = query[prm.name];
     if (raw === undefined || raw === '') raw = prm.default !== undefined ? String(prm.default) : null;
     let v = null;
@@ -60,7 +67,20 @@ api.get('/q/:key', async (req, res, next) => {
   try {
     const def = Q[req.params.key];
     if (!def) return res.status(404).json({ error: `Unknown query "${req.params.key}".` });
-    const values = readParams(def, req.query);
+    const roles = await auth.rolesOf(req.user?.uid);
+    // Role-restricted screens (for example the moderation queue).
+    if (def.roles && !def.roles.some((r) => roles[r])) {
+      return res.status(403).json({ error: def.denied || 'Your role cannot open this.', restricted: def.roles });
+    }
+    // Premium-gated editorials follow feature_gating_rules like problems do.
+    if (def.gate === 'editorial') {
+      const g = await run(`SELECT e.setter_id, r.minimum_access_level::text AS level FROM editorials e
+                           LEFT JOIN feature_gating_rules r ON r.rule_id = e.rule_id WHERE e.editorial_id = $1`,
+                          [Number.parseInt(req.query.editorial_id, 10) || null]);
+      const access = g.rows[0] ? auth.contentAccess(req.user, roles, g.rows[0].level, g.rows[0].setter_id) : { allowed: true };
+      if (!access.allowed) return res.status(403).json({ error: access.reason, locked: { needs: access.needs } });
+    }
+    const values = readParams(def, req.query, { viewer: req.user?.uid ?? null, staff: Boolean(roles.moderator || roles.admin) });
     const started = Date.now();
     const result = await run(def.sql, values);
     res.json({ key: req.params.key, srs: def.srs, rows: result.rows, rowCount: result.rowCount,
