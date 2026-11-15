@@ -104,7 +104,13 @@ api.get('/lab10a/:id', async (req, res, next) => {
   try {
     const item = LAB10A.find((x) => x.id === Number.parseInt(req.params.id, 10));
     if (!item) return res.status(404).json({ error: 'Query not found.' });
-    if (item.pre) await run(item.pre);           // e.g. CREATE OR REPLACE FUNCTION used by query 21
+    // item.pre creates a helper function (query 21). Run it only when the function is missing, so a normal
+    // click never changes the schema and two clicks at once cannot collide on CREATE OR REPLACE.
+    if (item.pre) {
+      const fn = item.pre.match(/FUNCTION\s+(\w+)/i)[1];
+      const { rows } = await run('SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = $1) AS ok', [fn]);
+      if (!rows[0].ok) await run(item.pre);
+    }
     const started = Date.now();
     const result = await run(item.sql);
     res.json({ id: item.id, rows: result.rows.slice(0, 200), rowCount: result.rowCount,

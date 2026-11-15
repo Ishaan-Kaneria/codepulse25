@@ -193,6 +193,7 @@ export function toast(msg, kind = '') {
   setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 320); }, 4200);
 }
 export function errorBox(err) {
+  if (err.status === 403) return `<div class="note-box warn"><b>Restricted.</b> ${esc(err.message)}</div>`;
   return `<div class="note-box warn"><b>Could not load this data.</b> ${esc(err.message)}${err.hint ? `<br><span class="small">${esc(err.hint)}</span>` : ''}</div>`;
 }
 

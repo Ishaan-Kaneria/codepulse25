@@ -1,0 +1,51 @@
+# Loads the three SQL files into a fresh PostgreSQL 16, starts the API, and runs scripts/smoke-test.js.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  database-and-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres   # throw-away password for this CI container only
+          POSTGRES_DB: leetcode_lab
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: leetcode_lab
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      AUTH_SECRET: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Load the schema, the data and the demo passwords
+        run: |
+          for f in db/01_create_tables.sql db/02_insert_data.sql db/03_demo_passwords.sql; do
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: The Netlify migrations match the db/ files
+        run: |
+          diff <(sed '/^DROP SCHEMA IF EXISTS public CASCADE;$/d;/^CREATE SCHEMA public;$/d' db/01_create_tables.sql) netlify/database/migrations/0001_create_tables/migration.sql
+          diff <(sed '/^BEGIN;$/d;/^COMMIT;$/d' db/02_insert_data.sql) netlify/database/migrations/0002_insert_data/migration.sql
+          diff db/03_demo_passwords.sql netlify/database/migrations/0003_demo_passwords/migration.sql
+      - run: npm run test:conn
+      - name: Start the API and run the smoke test
+        run: |
+          npm start > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:3000/api/health > /dev/null && break; sleep 1; done
+          npm run test:smoke || { cat server.log; exit 1; }

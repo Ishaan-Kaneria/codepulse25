@@ -637,8 +637,8 @@ async function pagePremium(v) {
       ], { empty: 'No Premium plan ends in this window.' });
     };
     el.innerHTML = card('Renewal reminders', '<div id="pr-exp-body"></div>', { flush: true, sub: 'Premium plans ending soon', tools: `<div class="seg" id="pr-days">${[15, 30, 60, 90].map((d) => `<button data-d="${d}" class="${d === 30 ? 'on' : ''}">${d}d</button>`).join('')}</div>` });
-    $$('#pr-days button').forEach((b) => b.onclick = () => { $$('#pr-days button').forEach((x) => x.classList.toggle('on', x === b)); draw(b.dataset.d); });
-    await draw(30);
+    $$('#pr-days button').forEach((b) => b.onclick = () => { $$('#pr-days button').forEach((x) => x.classList.toggle('on', x === b)); draw(b.dataset.d).catch(() => {}); });
+    try { await draw(30); } catch (e) { if (e.status !== 403) throw e; el.innerHTML = card('Renewal reminders', errorBox(e), { sub: 'administrators only' }); }
   });
   fill('#pr-rules', async (el) => {
     const rows = (await q('premium.rules')).rows;
@@ -669,7 +669,11 @@ async function pagePremium(v) {
     $('#ac-go').onclick = check; check();
   });
   fill('#pr-pay', async (el) => {
-    const rows = (await q('premium.payments')).rows;
+    let rows;
+    try { rows = (await q('premium.payments')).rows; } catch (e) {
+      if (e.status !== 403) throw e;
+      el.innerHTML = card('Latest payments', errorBox(e), { sub: 'administrators only' }); return;
+    }
     el.innerHTML = card('Latest payments', table(rows, [
       { label: 'User', key: 'username' }, { label: 'Amount', num: true, render: (r) => `${r.currency === 'INR' ? '₹' : '$'}${fmtNum(r.amount, 2)}` },
       { label: 'Method', key: 'payment_method' }, { label: 'Status', render: (r) => status(r.status) }, { label: 'Date', render: (r) => fmtDate(r.payment_date) }

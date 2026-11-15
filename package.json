@@ -1,6 +1,6 @@
 {
   "name": "codepulse",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "CodePulse: a LeetCode-style practice platform on PostgreSQL. 42-table BCNF schema, Node.js + Express + pg API, sign-in against the users table, live on Netlify. Team 25, MC212 DBMS.",
   "keywords": [
     "postgresql",
@@ -34,7 +34,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test:conn": "node scripts/test-connection.js",
-    "db:load": "node scripts/load-db.js"
+    "db:load": "node scripts/load-db.js",
+    "test:smoke": "node scripts/smoke-test.js"
   },
   "engines": {
     "node": ">=18"

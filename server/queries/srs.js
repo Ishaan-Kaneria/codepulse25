@@ -264,8 +264,10 @@ const Q = {
   },
   'users.profile': {
     srs: 'SRS 5, 8',
-    params: [p('user_id', 'int', { required: true })],
-    sql: `SELECT u.user_id, u.username, u.email_address, u.country, u.registration_date, u.last_login_timestamp,
+    // The email address is private: only the account itself and staff (moderation leads, administrators) see it.
+    params: [p('user_id', 'int', { required: true }), p('viewer', 'int', { server: 'viewer' }), p('staff', 'bool', { server: 'staff' })],
+    sql: `SELECT u.user_id, u.username,
+                 CASE WHEN $3::bool OR u.user_id = $2::int THEN u.email_address END AS email_address, u.country, u.registration_date, u.last_login_timestamp,
                  u.session_count, u.contribution_point, u.engagement_score,
                  s.contest_rating, s.current_daily_streak, s.total_problems_solved,
                  (SELECT COUNT(*) FROM follows f WHERE f.followee_id = u.user_id)::int AS followers,
@@ -458,6 +460,8 @@ const Q = {
   },
   'premium.expiring': {
     srs: 'SRS 6',
+    roles: ['admin'],
+    denied: 'Payment and renewal records name real accounts, so only administrators can open them. Sign in as parth_modi to see them.',
     params: [p('days', 'int', { default: 30 })],
     sql: `SELECT sb.subscription_id, u.username, sb.subscription_tier::text AS tier, sb.end_date, sb.renewal_date,
                  sb.auto_renewal_flag, sb.payment_status::text AS status,
@@ -479,6 +483,8 @@ const Q = {
   },
   'premium.payments': {
     srs: 'SRS 6',
+    roles: ['admin'],
+    denied: 'Payment and renewal records name real accounts, so only administrators can open them. Sign in as parth_modi to see them.',
     sql: `SELECT py.payment_id, u.username, py.amount, py.currency, py.payment_method,
                  py.transaction_status::text AS status, py.payment_date
           FROM payments py JOIN subscriptions sb ON sb.subscription_id = py.subscription_id

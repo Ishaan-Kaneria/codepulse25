@@ -13,6 +13,7 @@
   <img alt="No framework" src="https://img.shields.io/badge/frontend-vanilla_JS-F0B455">
   <img alt="Netlify" src="https://img.shields.io/badge/deploy-Netlify_+_Netlify_DB-00C7B7?logo=netlify&logoColor=white">
   <img alt="bcrypt sign-in" src="https://img.shields.io/badge/auth-bcrypt_+_role_tables-8B5CF6">
+  <a href="https://github.com/Ishaan-Kaneria/codepulse25/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Ishaan-Kaneria/codepulse25/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-EC4899"></a>
 </p>
 
@@ -113,6 +114,8 @@ The role tables and keys in `01_create_tables.sql` decide who may do what, and t
 | `problems.rule_id`, `editorials.rule_id → feature_gating_rules` | `Premium_Only` problems and editorials open only for users whose latest `subscriptions` row is an active Premium plan, plus administrators and the content's own setter. Everyone else sees a lock; the statement, samples, tests and editorial are not even sent. |
 | `moderator_reviews.moderator_id → moderation_leads` | Only moderation leads can close a report. The review is inserted and the post takes the decision as its `post_status`, in one transaction. Administrators can read the queue but not sign reviews. |
 | `post_status` = `Hidden` / `Removed` | Those posts (and their comments) are visible only to moderation leads, administrators and the author. |
+| `users.email_address` (`UNIQUE`, private) | A profile shows the email only to its owner and to staff. Everyone else gets `NULL` from the query itself. |
+| `payments`, `subscriptions` | The payment list and the renewal reminders name real accounts, so only administrators can open them. The revenue chart and the plan counts are totals with no names, and stay public. |
 | `submissions`, `participations`, `enrolments → solvers`; `contests.manager_id → contest_managers` | Enforced by PostgreSQL; the app has no screens that write these rows. |
 
 Who the viewer is comes from the signed token on the server, never from the URL, so `?staff=true` in a request changes nothing.
@@ -161,16 +164,17 @@ You need Node.js 18 or newer and PostgreSQL.
 npm install
 cp .env.example .env          # Windows: copy .env.example .env
 # set PGDATABASE, PGUSER and PGPASSWORD in .env
-npm run db:load               # creates the 42 tables, loads every row, sets the demo passwords (drops the public schema first)
+npm run db:load -- --yes      # creates the 42 tables, loads every row, sets the demo passwords (drops the public schema first)
 npm run test:conn             # prints the PostgreSQL version and "Tables in public schema: 42"
 npm start                     # http://localhost:3000
+npm run test:smoke            # in a second terminal: checks every query and the CRUD cycle
 ```
 
 `npm run dev` restarts the server when you edit a file.
 
 ### In GitHub Codespaces
 
-Click **Code → Codespaces → Create codespace on main**. The Codespace starts Node 22 and PostgreSQL 16, loads both SQL files,
+Click **Code → Codespaces → Create codespace on main**. The Codespace starts Node 22 and PostgreSQL 16, loads the three SQL files,
 creates `.env` and runs `npm start`. Port 3000 opens in a preview tab.
 
 ### On Netlify
@@ -183,7 +187,7 @@ The site uses **Netlify Database**, Netlify's built-in PostgreSQL, so there is n
 4. Open the site and sign in. The rail should say **Live, 42 tables in netlifydb**.
 
 To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL` in the site's environment variables, load the data with
-`DATABASE_URL="…" npm run db:load`, and redeploy. `DATABASE_URL` wins over `NETLIFY_DB_URL`.
+`DATABASE_URL="…" npm run db:load -- --yes`, and redeploy. `DATABASE_URL` wins over `NETLIFY_DB_URL`.
 
 ## API
 
@@ -197,6 +201,7 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 | POST | `/api/problems` | **Create** a problem and its tags in one transaction (signed in) |
 | PUT | `/api/problems/:id` | **Update** a problem (`WHERE problem_id = $11`) |
 | DELETE | `/api/problems/:id` | **Delete** a problem (`WHERE problem_id = $1`); 409 with the reason if a foreign key blocks it |
+| POST | `/api/moderation/reviews` | Close a flag report (moderation leads only): `INSERT` the review and `UPDATE` the post's status in one transaction |
 | GET | `/api/problems/meta` | Setters, rules, topics and companies for the form |
 | GET | `/api/q/:key?…` | A named read-only query for a screen (see `server/queries/srs.js`) |
 | GET | `/api/sql/:key` | The SQL text behind a screen |
@@ -210,6 +215,10 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 - **Validation on the server** before any SQL runs: title length, difficulty, and time and memory limits that match the `CHECK` constraints.
 - **The browser never connects to PostgreSQL.** It only calls our API.
 - **Sort orders come from a fixed list** on the server, never from raw input.
+- **Who you are comes from the signed token**, never from the URL. Role checks read the role tables on every request.
+- **Private columns stay on the server.** `password_hash` is never selected for a screen, and `email_address` is returned only to its owner and staff.
+- **The loader asks first.** `npm run db:load` drops the public schema, so it prints which database it would wipe and stops unless you add `--yes`.
+- **Tested on every push.** GitHub Actions loads the three SQL files into a fresh PostgreSQL 16, checks that the Netlify migrations match them, and runs [`scripts/smoke-test.js`](scripts/smoke-test.js): every screen query, all 30 Lab 10A queries, sign-in, the role rules, and a full create, update, delete cycle.
 
 ## Project layout
 
@@ -220,14 +229,16 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 │   ├── index.js              starts the server locally or in a Codespace
 │   ├── routes/problems.js    INSERT, SELECT, UPDATE, DELETE on problems     Lab 11 B
 │   ├── routes/auth.js        bcrypt sign-in against users, role checks
+│   ├── routes/moderation.js  close a flag report (INSERT + UPDATE in one transaction)
 │   └── queries/
 │       ├── srs.js            read-only queries behind every screen
 │       └── lab10a.js         the 30 Lab 10A queries
 ├── public/                   the frontend: HTML, CSS, JavaScript             Lab 11 C
 ├── netlify/
 │   ├── functions/api.mjs     runs the Express app as a Netlify Function
-│   └── database/migrations/  the two SQL files, applied by Netlify Database
-├── scripts/                  test-connection.js, load-db.js
+│   └── database/migrations/  the three SQL files, applied by Netlify Database
+├── scripts/                  test-connection.js, load-db.js, smoke-test.js
+├── .github/workflows/ci.yml  loads the SQL into PostgreSQL 16 and runs the smoke test
 ├── db/                       01_create_tables.sql, 02_insert_data.sql, 03_demo_passwords.sql
 ├── docs/                     banner and screenshots for this page
 └── .devcontainer/            GitHub Codespaces: Node 22 + PostgreSQL 16
