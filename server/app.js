@@ -7,6 +7,7 @@ const LAB10A = require('./queries/lab10a');
 const problems = require('./routes/problems');
 const auth = require('./routes/auth');
 const moderation = require('./routes/moderation');
+const admin = require('./routes/admin');
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
@@ -31,6 +32,9 @@ api.use('/auth', auth);
 
 // Moderation reviews (moderation leads only)
 api.use('/moderation', auth.requireUser, moderation);
+
+// Administrator screens: users, topics, companies, SQL console
+api.use('/admin', auth.requireUser, admin);
 
 // Main table CRUD (writes need a signed-in administrator or problem setter)
 api.use('/problems', (req, res, next) => (req.method === 'GET' ? next() : auth.requireUser(req, res, () => auth.requireEditor(req, res, next))), problems);
@@ -124,7 +128,21 @@ app.use('/.netlify/functions/api', api);   // path seen inside the Netlify Funct
 // Static frontend (local / Codespace). On Netlify the CDN serves /public directly.
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Errors -> JSON, with a plain-English hint for common connection problems
+// Errors -> JSON, with a plain-English message for constraint errors and a hint for connection problems
+const LABELS = { problem_id: 'Problem ID', user_id: 'User ID', username: 'Username', email_address: 'Email address',
+                 topic_id: 'Topic ID', topic_name: 'Topic name', company_id: 'Company ID', company_name: 'Company name' };
+function explain(err) {
+  // 23505 unique_violation: detail is "Key (username)=(parth_modi) already exists."
+  if (err.code === '23505') {
+    const m = /Key \((.+?)\)=\((.*)\) already exists/.exec(err.detail || '');
+    const what = m ? `${LABELS[m[1]] || m[1]} ${/_id$/.test(m[1]) ? m[2] : `"${m[2]}"`}` : 'That value';
+    return { status: 409, message: `${what} is already taken. PostgreSQL rejected the row: duplicate key value violates unique constraint "${err.constraint}".` };
+  }
+  if (err.code === '23503') return { status: 409, message: `${err.detail || err.message} (foreign key "${err.constraint}").` };
+  if (err.code === '23514') return { status: 400, message: `A value breaks the CHECK constraint "${err.constraint}" on ${err.table}.` };
+  if (err.code === '23502') return { status: 400, message: `${err.column} cannot be empty (NOT NULL on ${err.table}).` };
+  return null;
+}
 app.use((err, req, res, next) => {
   const hints = {
     ECONNREFUSED: 'PostgreSQL is not running or the host/port in .env is wrong.',
@@ -133,9 +151,11 @@ app.use((err, req, res, next) => {
     '42P01': 'A table is missing. Run db/01_create_tables.sql and db/02_insert_data.sql first.',
     ENOTFOUND: 'The database host could not be found. Check PGHOST or DATABASE_URL.'
   };
-  const status = err.status || (err.code && /^(22|23)/.test(err.code) ? 400 : 500);
+  const nice = explain(err);
+  const status = err.status && err.status !== 400 ? err.status : nice?.status || err.status || (err.code && /^(22|23)/.test(err.code) ? 400 : 500);
   if (status >= 500) console.error(err);
-  res.status(status).json({ error: err.message, code: err.code, hint: hints[err.code] });
+  res.status(status).json({ error: nice?.message || err.message, code: err.code, constraint: err.constraint, detail: err.detail,
+                            position: err.position, hint: hints[err.code] });
 });
 
 module.exports = app;

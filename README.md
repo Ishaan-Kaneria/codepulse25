@@ -183,7 +183,8 @@ The site uses **Netlify Database**, Netlify's built-in PostgreSQL, so there is n
 
 1. Import this repository in Netlify (**Add new site → Import an existing project**). The build settings come from `netlify.toml`.
 2. Deploy. Netlify creates the database and applies the three migrations in [`netlify/database/migrations/`](netlify/database/migrations), which are our SQL files.
-3. Add an `AUTH_SECRET` environment variable (any long random string) so sign-in tokens are signed with your own key.
+3. Add an `AUTH_SECRET` environment variable (any long random string) so sign-in tokens are signed with your own key. **Without it, tokens use the fallback key written in `server/routes/auth.js`, and anyone could forge an administrator's token.**
+   Also add `SQL_CONSOLE_WRITES=off`, so the SQL console can only try changes with "roll back" ticked (the demo passwords are public).
 4. Open the site and sign in. The rail should say **Live, 42 tables in netlifydb**.
 
 To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL` in the site's environment variables, load the data with
@@ -206,6 +207,11 @@ To use another hosted PostgreSQL instead (Neon, Supabase…), set `DATABASE_URL`
 | GET | `/api/q/:key?…` | A named read-only query for a screen (see `server/queries/srs.js`) |
 | GET | `/api/sql/:key` | The SQL text behind a screen |
 | GET | `/api/lab10a`, `/api/lab10a/:id` | List or run the 30 Lab 10A queries |
+| GET, POST, PUT, DELETE | `/api/admin/users[/:id]` | **Users CRUD** with their role rows (administrators only). Duplicate username, email or id → 409 from the UNIQUE / primary key |
+| GET | `/api/admin/users/:id/dependents` | What still references a user: blocking foreign keys, owned content, and cascaded rows |
+| DELETE | `/api/admin/users/:id?mode=purge` | Delete a user's posts, comments, reports, reviews, subscriptions, submissions and rating history, then the user, in one transaction |
+| GET, POST, PUT, DELETE | `/api/admin/topics[/:id]`, `/api/admin/companies[/:id]` | **Topics and companies CRUD** (administrators only) |
+| POST | `/api/admin/sql` | SQL console: one statement (SELECT / WITH / INSERT / UPDATE / DELETE / EXPLAIN …), 5 s timeout, optional rollback. DROP, ALTER, TRUNCATE, CREATE are refused |
 
 ## Safety rules we follow
 

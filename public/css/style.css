@@ -725,3 +725,10 @@ a.plain { color: inherit; } a.plain:hover { color: var(--accent); text-decoratio
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
   .drawer { top: 0; right: 0; bottom: 0; width: 100vw; border-radius: 0; }
 }
+
+/* ---------- SQL console (admin) */
+.sql-box { width: 100%; min-height: 220px; resize: vertical; line-height: 1.65; font-size: 13px; tab-size: 2; white-space: pre; overflow: auto; }
+.sql-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.sql-rb { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text); }
+.picker .mono.small { font-size: 11px; }
+@media (max-width: 640px) { #sql-meta { margin-left: 0 !important; width: 100%; } }

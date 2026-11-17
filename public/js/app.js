@@ -4,6 +4,7 @@ import {
   bars, donut, columns, lineChart, highlightSQL, openDrawer, closeDrawer, openModal, closeModal, toast, errorBox,
   showSQL, icon, VERDICT_COLORS, VERDICT_NAMES, auth
 } from './core.js';
+import { pageUsers, pageCatalog, pageConsole } from './admin.js';
 
 // ---------------------------------------------------------------- navigation
 const I = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
@@ -27,8 +28,14 @@ const NAV = [
   { id: 'integrity', label: 'Code Integrity', srs: '11·12', icon: I('<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/>') },
   { group: 'Labs' },
   { id: 'querylab', label: 'Query Lab · 10A', icon: I('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7 15h10"/>') },
-  { id: 'connection', label: 'Connection & Schema', icon: I('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>') }
+  { id: 'connection', label: 'Connection & Schema', icon: I('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>') },
+  { group: 'Admin', admin: true },
+  { id: 'users', label: 'Users', admin: true, icon: I('<circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 13-6.2M18 14v6M15 17h6"/>') },
+  { id: 'catalog', label: 'Topics & Companies', admin: true, icon: I('<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>') },
+  { id: 'sqlconsole', label: 'SQL Console', admin: true, icon: I('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/>') }
 ];
+// Admin screens are listed only for administrators (the API enforces it as well).
+const visibleNav = () => NAV.filter((n) => !n.admin || auth.user?.is_admin);
 
 const SRS = [
   { n: 1, t: 'Problem Library', d: 'Problems linked to many topic tags', page: 'problems' },
@@ -52,7 +59,7 @@ const hue = (name) => [...String(name)].reduce((a, c) => (a * 31 + c.charCodeAt(
 const avatar = (name, size = '') => `<span class="pav ${size}" style="--h:${hue(name)}">${initials(name)}</span>`;
 
 function renderNav(active) {
-  $('#nav').innerHTML = NAV.map((n) => n.group
+  $('#nav').innerHTML = visibleNav().map((n) => n.group
     ? `<div class="group">${esc(n.group)}</div>`
     : `<a href="#/${n.id}" class="${n.id === active ? 'active' : ''}">${n.icon}<span>${esc(n.label)}</span>${n.srs ? `<span class="srs" title="SRS function ${n.srs.replace('·', ' and ')}">${n.srs.replace('·', ', ')}</span>` : ''}</a>`).join('');
 }
@@ -337,6 +344,7 @@ async function problemForm(existing) {
   const editing = Boolean(existing);
   const body = openModal(editing ? `Edit problem #${p.problem_id}` : 'Add a new problem', `
     <form class="form" id="pform" novalidate>
+      ${editing ? '' : `<label class="full">Problem ID <span class="hint">optional · blank = next free id; a taken id is refused by the primary key</span><input class="input" type="number" name="problem_id" min="1" placeholder="auto"></label>`}
       <label class="full">Title<input class="input" name="title" maxlength="150" required value="${esc(p.title || '')}" placeholder="e.g. Longest Balanced Substring"></label>
       <label>Difficulty<select class="input" name="difficulty_level">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${p.difficulty_level === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Problem setter<select class="input" name="setter_id">${meta.setters.filter((s) => auth.user?.is_admin || s.user_id === auth.user?.user_id).map((s) => `<option value="${s.user_id}" ${p.setter_id === s.user_id ? 'selected' : ''}>${esc(s.username)} (#${s.user_id})</option>`).join('')}</select></label>
@@ -365,11 +373,11 @@ async function problemForm(existing) {
         : await api('/api/problems', { method: 'POST', body: payload });
       closeModal();
       toast(`<b>${esc(res.message)}</b><br><span class="small">rowCount: ${res.rowCount}</span>`, 'ok');
-      META = META; // tags are cached; problems list refreshes below
+      // tags are cached; the problems list refreshes below
       await loadProblems();
       openProblem(editing ? p.problem_id : res.problem_id);
     } catch (e) {
-      $('#pform-err', body).innerHTML = `<div class="note-box warn">${esc(e.message)}</div>`;
+      $('#pform-err', body).innerHTML = `<div class="note-box warn">${esc(e.message)}${e.data?.constraint ? `<div class="small" style="margin-top:6px">SQLSTATE <code>${esc(e.data.code)}</code> · constraint <code>${esc(e.data.constraint)}</code></div>` : ''}</div>`;
       btn.disabled = false;
     }
   };
@@ -1226,8 +1234,11 @@ async function pageConnection(v) {
 const PAGES = {
   overview: pageOverview, problems: pageProblems, submissions: pageSubmissions, contests: pageContests, solvers: pageSolvers,
   premium: pagePremium, companies: pageCompanies, community: pageCommunity, people: pagePeople, moderation: pageModeration, plans: pagePlans,
-  integrity: pageIntegrity, querylab: pageQueryLab, connection: pageConnection
+  integrity: pageIntegrity, querylab: pageQueryLab, connection: pageConnection,
+  users: pageUsers, catalog: pageCatalog, sqlconsole: pageConsole
 };
+// Topics or companies changed on an admin screen: reload the problem form's dropdowns next time.
+window.addEventListener('cp-meta-changed', () => { META = null; });
 function route() {
   const [path, qs] = (location.hash.replace(/^#\/?/, '') || 'overview').split('?');
   const [seg, arg] = path.split('/');
@@ -1305,7 +1316,7 @@ function paletteRender() {
 }
 function paletteSearch(term) {
   const t = term.trim().toLowerCase();
-  const screens = NAV.filter((n) => n.id && (!t || n.label.toLowerCase().includes(t) || n.id.includes(t)))
+  const screens = visibleNav().filter((n) => n.id && (!t || n.label.toLowerCase().includes(t) || n.id.includes(t)))
     .map((n) => ({ group: 'Screens', icon: n.icon, html: esc(n.label), meta: n.srs ? `SRS ${n.srs.replace('·', ', ')}` : '', go: () => { location.hash = `#/${n.id}`; } }));
   pal.items = screens; pal.sel = 0; paletteRender();
   clearTimeout(pal.timer);

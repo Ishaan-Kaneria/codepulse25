@@ -16,6 +16,7 @@ const nullIfEmpty = (v) => { v = clean(v); return v === '' || v === undefined ? 
 function validate(body) {
   const errors = [];
   const data = {
+    problem_id: toInt(body.problem_id),
     title: clean(body.title),
     full_description: clean(body.full_description),
     difficulty_level: body.difficulty_level,
@@ -29,6 +30,8 @@ function validate(body) {
     topic_ids: Array.isArray(body.topic_ids) ? body.topic_ids.map(toInt).filter(Number.isInteger) : [],
     company_ids: Array.isArray(body.company_ids) ? body.company_ids.map(toInt).filter(Number.isInteger) : []
   };
+  if (data.problem_id !== null && (!Number.isInteger(data.problem_id) || data.problem_id < 1 || data.problem_id > 2147483647))
+    errors.push('Problem ID must be a whole number from 1 to 2147483647, or left blank.');
   if (!data.title || data.title.length > 150) errors.push('Title is required (max 150 characters).');
   if (!data.full_description) errors.push('Description is required.');
   if (!DIFFS.includes(data.difficulty_level)) errors.push('Difficulty must be Easy, Medium or Hard.');
@@ -161,17 +164,18 @@ router.post('/', async (req, res, next) => {
   }
   try {
     const row = await withTransaction(async (client) => {
-      // problem_id has no sequence in the schema, so take the next free number inside the transaction.
+      // problem_id has no sequence in the schema. A typed id is inserted as-is, so a taken id is refused by the
+      // primary key (problems_pkey); a blank id takes the next free number while the table is locked.
       await client.query('LOCK TABLE problems IN SHARE ROW EXCLUSIVE MODE');
       const ins = await client.query(
         `INSERT INTO problems (problem_id, setter_id, rule_id, title, full_description, difficulty_level,
                                constraint_text, sample_input, sample_output, creation_date,
                                time_limit_ms, memory_limit_mb, total_attempts, global_acceptance_rate)
-         SELECT COALESCE(MAX(problem_id), 0) + 1, $1, $2, $3, $4, $5::difficulty_t, $6, $7, $8, CURRENT_DATE, $9, $10, 0, NULL
-         FROM problems
+         SELECT COALESCE($11::int, (SELECT COALESCE(MAX(problem_id), 0) + 1 FROM problems)),
+                $1, $2, $3, $4, $5::difficulty_t, $6, $7, $8, CURRENT_DATE, $9, $10, 0, NULL
          RETURNING problem_id, title, difficulty_level::text AS difficulty_level`,
         [data.setter_id, data.rule_id, data.title, data.full_description, data.difficulty_level,
-         data.constraint_text, data.sample_input, data.sample_output, data.time_limit_ms, data.memory_limit_mb]);
+         data.constraint_text, data.sample_input, data.sample_output, data.time_limit_ms, data.memory_limit_mb, data.problem_id]);
       await saveTags(client, ins.rows[0].problem_id, data.topic_ids, data.company_ids);
       return { ...ins.rows[0], rowCount: ins.rowCount };
     });

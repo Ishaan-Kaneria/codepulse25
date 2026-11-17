@@ -77,6 +77,50 @@ async function signIn(username) {
   check(removed.status === 200 && removed.data.rowCount === 1, 'administrator deletes it');
   check((await call('/problems/1', { method: 'DELETE', token: admin })).status === 409, 'a foreign key protects problem 1');
 
+  // A typed problem id that is already taken is refused by the primary key
+  const dupProblem = await call('/problems', { method: 'POST', body: { ...form, problem_id: 1 }, token: admin });
+  check(dupProblem.status === 409 && dupProblem.data.constraint === 'problems_pkey', 'a taken problem id is refused (problems_pkey)');
+
+  // Admin: users CRUD
+  check((await call('/admin/users', { token: solver })).status === 403, 'a solver cannot open the users screen');
+  const newUser = { username: 'smoke_user', email_address: 'smoke@example.com', password: 'secret1', roles: { solver: true } };
+  const dupName = await call('/admin/users', { method: 'POST', body: { ...newUser, username: 'parth_modi' }, token: admin });
+  check(dupName.status === 409 && dupName.data.constraint === 'users_username_key', 'a duplicate username is refused (users_username_key)');
+  const dupUid = await call('/admin/users', { method: 'POST', body: { ...newUser, user_id: 1 }, token: admin });
+  check(dupUid.status === 409 && dupUid.data.constraint === 'users_pkey', 'a taken user id is refused (users_pkey)');
+  const madeUser = await call('/admin/users', { method: 'POST', body: newUser, token: admin });
+  check(madeUser.status === 201, 'administrator creates a user', madeUser.data.message);
+  const uid = madeUser.data.user_id;
+  const editedUser = await call(`/admin/users/${uid}`, { method: 'PUT', token: admin,
+    body: { ...newUser, password: '', country: 'India', roles: { solver: true, setter: true } } });
+  check(editedUser.status === 200 && editedUser.data.changes.includes('INSERT INTO problem_setters'), 'administrator edits the user and adds a role');
+  const login = await call('/auth/login', { method: 'POST', body: { username: 'smoke_user', password: 'secret1' } });
+  check(login.status === 200, 'the new user can sign in');
+  const blocked = await call('/admin/users/82', { method: 'DELETE', token: admin });
+  check(blocked.status === 409 && blocked.data.blockers?.posts >= 1, 'deleting a user with posts is blocked by a foreign key');
+  const dropUser = await call(`/admin/users/${uid}`, { method: 'DELETE', token: admin });
+  check(dropUser.status === 200 && dropUser.data.rowCount === 1, 'administrator deletes the user');
+
+  // Admin: topics CRUD
+  const dupTopic = await call('/admin/topics', { method: 'POST', body: { topic_name: 'Arrays' }, token: admin });
+  check(dupTopic.status === 409, 'a duplicate topic name is refused');
+  const topic = await call('/admin/topics', { method: 'POST', body: { topic_name: 'Smoke Topic' }, token: admin });
+  check(topic.status === 201, 'administrator creates a topic');
+  check((await call(`/admin/topics/${topic.data.id}`, { method: 'PUT', body: { topic_name: 'Smoke Topic 2' }, token: admin })).status === 200, 'administrator renames it');
+  check((await call(`/admin/topics/${topic.data.id}`, { method: 'DELETE', token: admin })).status === 200, 'administrator deletes it');
+  const badScore = await call('/admin/companies', { method: 'POST', body: { company_name: 'Smoke Co', dynamic_trending_score: 150 }, token: admin });
+  check(badScore.status === 400 && badScore.data.code === '23514', 'a CHECK constraint violation is reported');
+
+  // Admin: SQL console
+  const sql = (text, rollback = false) => call('/admin/sql', { method: 'POST', body: { sql: text, rollback }, token: admin });
+  const join = await sql('SELECT u.username, p.title FROM problems p JOIN users u ON u.user_id = p.setter_id LIMIT 3');
+  check(join.status === 200 && join.data.rowCount === 3, 'console runs a join');
+  check((await sql('DROP TABLE users')).status === 400, 'console blocks DROP');
+  check((await sql('SELECT 1; DELETE FROM users')).status === 400, 'console blocks a second statement');
+  const rb = await sql('UPDATE users SET country = country WHERE user_id = 82', true);
+  check(rb.status === 200 && rb.data.rolledBack && rb.data.rowCount === 1, 'console can roll a change back');
+  check((await call('/admin/sql', { method: 'POST', body: { sql: 'SELECT 1' }, token: solver })).status === 403, 'a solver cannot use the console');
+
   // Moderation review
   const queue = (await call('/q/moderation.queue', { token: admin })).data.rows;
   if (queue.length) {
